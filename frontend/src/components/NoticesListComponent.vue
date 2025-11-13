@@ -33,7 +33,7 @@
 
     <!-- 通知书表格 -->
     <el-table
-      :data="store.notices"
+      :data="displayNotices"
       stripe
       style="width: 100%"
       :default-sort="{ prop: 'id', order: 'descending' }"
@@ -80,13 +80,29 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useNoticeManagementStore } from '../stores/noticeManagementStore'
+import { useImportStore } from '../stores/importStore'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 
 const store = useNoticeManagementStore()
+const importStore = useImportStore()
 
 const emit = defineEmits(['view-detail'])
+
+// 判断是否显示导入的通知书列表
+const isShowingImportedNotices = computed(() => {
+  return importStore.importedNotices.length > 0
+})
+
+// 获取要显示的通知书列表
+const displayNotices = computed(() => {
+  if (isShowingImportedNotices.value) {
+    return importStore.importedNotices
+  }
+  return store.notices
+})
 
 const handleSearch = () => {
   store.noticesPage = 1
@@ -94,8 +110,13 @@ const handleSearch = () => {
 }
 
 const handleViewDetail = (row) => {
-  emit('view-detail', row)
-  store.selectNotice(row)
+  // 如果是显示导入的通知书，使用 importStore
+  if (isShowingImportedNotices.value) {
+    importStore.selectNotice(row.id)
+  } else {
+    // 否则使用 noticeManagementStore
+    store.selectNotice(row)
+  }
 }
 
 const handleDeleteNotice = (row) => {

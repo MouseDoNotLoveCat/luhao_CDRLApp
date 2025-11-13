@@ -308,6 +308,13 @@ export const useImportStore = defineStore('import', () => {
     selectedIssueId.value = null
     importedNotices.value = []
     noticeIssues.value = []
+    // 清空已选择的文件
+    selectedFiles.value = []
+    importResult.value = null
+    batchImportResult.value = null
+    error.value = null
+    issues.value = []
+    batchProgress.value = 0
   }
 
   return {

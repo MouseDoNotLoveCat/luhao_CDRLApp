@@ -296,18 +296,14 @@ const handleImport = async () => {
   if (success) {
     if (importStore.filesCount === 1) {
       ElMessage.success('文件导入成功')
-      // 导入成功后，刷新通知书列表并显示
-      setTimeout(async () => {
-        // 刷新通知书列表
-        await noticeStore.fetchNotices()
+      // 导入成功后，显示本次导入的通知书列表
+      setTimeout(() => {
         importStore.goToNoticesList()
       }, 500)
     } else {
       ElMessage.success('批量导入成功')
-      // 批量导入成功后，刷新通知书列表并显示
-      setTimeout(async () => {
-        // 刷新通知书列表
-        await noticeStore.fetchNotices()
+      // 批量导入成功后，显示本次导入的通知书列表
+      setTimeout(() => {
         importStore.goToNoticesList()
       }, 500)
     }
