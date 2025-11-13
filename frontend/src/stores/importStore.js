@@ -1,0 +1,362 @@
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import importService from '../services/importService'
+
+export const useImportStore = defineStore('import', () => {
+  // 状态
+  const selectedFile = ref(null)
+  const selectedFiles = ref([])  // 批量导入的文件列表
+  const isLoading = ref(false)
+  const isBatchLoading = ref(false)  // 批量导入加载状态
+  const importResult = ref(null)
+  const batchImportResult = ref(null)  // 批量导入结果
+  const error = ref(null)
+  const issues = ref([])
+  const currentPage = ref(1)
+  const pageSize = ref(20)
+  const totalIssues = ref(0)
+  const batchProgress = ref(0)  // 批量导入进度 (0-100)
+
+  // 三层导航状态
+  const viewMode = ref('upload')  // 'upload' | 'notices' | 'issues' | 'detail'
+  const importedNotices = ref([])  // 已导入的通知书列表
+  const selectedNoticeId = ref(null)  // 当前选中的通知书 ID
+  const selectedIssueId = ref(null)  // 当前选中的问题 ID
+  const noticeIssues = ref([])  // 当前通知书的问题列表
+
+  // 计算属性
+  const hasFile = computed(() => selectedFile.value !== null)
+  const fileName = computed(() => selectedFile.value?.name || '')
+  const fileSize = computed(() => {
+    if (!selectedFile.value) return ''
+    const size = selectedFile.value.size
+    if (size < 1024) return `${size} B`
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`
+  })
+
+  // 批量导入相关计算属性
+  const hasFiles = computed(() => selectedFiles.value.length > 0)
+  const filesCount = computed(() => selectedFiles.value.length)
+  const totalFilesSize = computed(() => {
+    const total = selectedFiles.value.reduce((sum, file) => sum + file.size, 0)
+    if (total < 1024) return `${total} B`
+    if (total < 1024 * 1024) return `${(total / 1024).toFixed(2)} KB`
+    return `${(total / (1024 * 1024)).toFixed(2)} MB`
+  })
+
+  // 方法
+  const setSelectedFile = (file) => {
+    selectedFile.value = file
+    error.value = null
+  }
+
+  const clearSelectedFile = () => {
+    selectedFile.value = null
+    importResult.value = null
+    error.value = null
+  }
+
+  const importDocument = async () => {
+    if (!selectedFile.value) {
+      error.value = '请先选择文件'
+      return false
+    }
+
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const result = await importService.importDocument(selectedFile.value)
+      importResult.value = result
+
+      // 为每个问题添加检查日期和检查单位
+      const enrichedIssues = (result.issues || []).map(issue => ({
+        ...issue,
+        check_date: result.check_date,
+        check_unit: result.check_unit,
+        project_name: result.project_name
+      }))
+
+      issues.value = enrichedIssues
+      totalIssues.value = result.total_issues_count || 0
+      return true
+    } catch (err) {
+      error.value = err.response?.data?.detail || err.message || '导入失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  const fetchIssues = async (page = 1) => {
+    currentPage.value = page
+    const offset = (page - 1) * pageSize.value
+    
+    try {
+      const result = await importService.getIssues(pageSize.value, offset)
+      issues.value = result
+      return result
+    } catch (err) {
+      error.value = err.message || '获取问题列表失败'
+      return []
+    }
+  }
+
+  const resetImport = () => {
+    selectedFile.value = null
+    importResult.value = null
+    error.value = null
+    issues.value = []
+    currentPage.value = 1
+  }
+
+  // 批量导入相关方法
+  const setSelectedFiles = (files) => {
+    selectedFiles.value = Array.from(files)
+    error.value = null
+  }
+
+  const addSelectedFiles = (files) => {
+    selectedFiles.value = [...selectedFiles.value, ...Array.from(files)]
+    error.value = null
+  }
+
+  const removeSelectedFile = (index) => {
+    selectedFiles.value.splice(index, 1)
+  }
+
+  const clearSelectedFiles = () => {
+    selectedFiles.value = []
+    batchImportResult.value = null
+    error.value = null
+    batchProgress.value = 0
+  }
+
+  const importBatch = async () => {
+    if (selectedFiles.value.length === 0) {
+      error.value = '请先选择至少一个文件'
+      return false
+    }
+
+    isBatchLoading.value = true
+    error.value = null
+    batchProgress.value = 0
+
+    try {
+      const result = await importService.importBatch(selectedFiles.value)
+      batchImportResult.value = result
+      batchProgress.value = 100
+
+      // 将成功导入的通知书添加到 importedNotices 数组
+      if (result.details && Array.isArray(result.details)) {
+        result.details.forEach(detail => {
+          // 跳过重复的通知书
+          if (detail.duplicate) {
+            console.warn(`通知书 ${detail.notice_number} 已存在，跳过导入`)
+            return
+          }
+
+          if (detail.success) {
+            // 为每个问题添加检查日期和检查单位
+            const enrichedIssues = (detail.issues || []).map(issue => ({
+              ...issue,
+              check_date: detail.check_date,
+              check_unit: detail.check_unit,
+              project_name: detail.project_name
+            }))
+
+            // 创建通知书对象
+            const notice = {
+              id: detail.id || `batch_${Date.now()}_${Math.random()}`,
+              notice_number: detail.notice_number,
+              project_name: detail.project_name,
+              check_date: detail.check_date,
+              check_unit: detail.check_unit,
+              issues_count: detail.total_issues || 0,
+              issues: enrichedIssues
+            }
+            importedNotices.value.push(notice)
+          }
+        })
+      }
+
+      return true
+    } catch (err) {
+      error.value = err.response?.data?.detail || err.message || '批量导入失败'
+      return false
+    } finally {
+      isBatchLoading.value = false
+    }
+  }
+
+  const resetBatchImport = () => {
+    selectedFiles.value = []
+    batchImportResult.value = null
+    error.value = null
+    batchProgress.value = 0
+  }
+
+  // 统一导入方法 - 根据文件数量自动选择单文件或批量导入
+  const importFiles = async () => {
+    if (selectedFiles.value.length === 0) {
+      error.value = '请先选择至少一个文件'
+      return false
+    }
+
+    // 如果只有一个文件，使用单文件导入
+    if (selectedFiles.value.length === 1) {
+      return await importSingleFile()
+    }
+
+    // 多个文件，使用批量导入
+    return await importBatch()
+  }
+
+  // 单文件导入（从 selectedFiles 中获取）
+  const importSingleFile = async () => {
+    if (selectedFiles.value.length === 0) {
+      error.value = '请先选择文件'
+      return false
+    }
+
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const file = selectedFiles.value[0]
+      const result = await importService.importDocument(file)
+      importResult.value = result
+
+      // 检查是否重复
+      if (result.duplicate) {
+        error.value = result.error
+        return false
+      }
+
+      // 检查是否导入失败
+      if (!result.success) {
+        error.value = result.error
+        return false
+      }
+
+      // 为每个问题添加检查日期和检查单位
+      const enrichedIssues = (result.issues || []).map(issue => ({
+        ...issue,
+        check_date: result.check_date,
+        check_unit: result.check_unit,
+        project_name: result.project_name
+      }))
+
+      issues.value = enrichedIssues
+      totalIssues.value = result.total_issues_count || 0
+
+      // 添加到已导入的通知书列表
+      const notice = {
+        id: result.id || Date.now(),
+        notice_number: result.notice_number,
+        project_name: result.project_name,
+        check_date: result.check_date,
+        check_unit: result.check_unit,
+        issues_count: result.total_issues_count || 0,
+        issues: enrichedIssues
+      }
+      importedNotices.value.push(notice)
+
+      return true
+    } catch (err) {
+      error.value = err.response?.data?.detail || err.message || '导入失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // 三层导航方法
+  const goToNoticesList = () => {
+    viewMode.value = 'notices'
+    selectedNoticeId.value = null
+    selectedIssueId.value = null
+  }
+
+  const selectNotice = (noticeId) => {
+    selectedNoticeId.value = noticeId
+    const notice = importedNotices.value.find(n => n.id === noticeId)
+    if (notice) {
+      noticeIssues.value = notice.issues || []
+    }
+    viewMode.value = 'issues'
+  }
+
+  const selectIssue = (issueId) => {
+    console.log('🔍 selectIssue called with issueId:', issueId)
+    console.log('   Current noticeIssues:', noticeIssues.value)
+    selectedIssueId.value = issueId
+    viewMode.value = 'detail'
+    console.log('   After selectIssue, viewMode:', viewMode.value)
+    console.log('   selectedIssueId:', selectedIssueId.value)
+  }
+
+  const goBackToNotices = () => {
+    selectedIssueId.value = null
+    viewMode.value = 'issues'
+  }
+
+  const goBackToUpload = () => {
+    viewMode.value = 'upload'
+    selectedNoticeId.value = null
+    selectedIssueId.value = null
+    importedNotices.value = []
+    noticeIssues.value = []
+  }
+
+  return {
+    // 状态
+    selectedFile,
+    selectedFiles,
+    isLoading,
+    isBatchLoading,
+    importResult,
+    batchImportResult,
+    error,
+    issues,
+    currentPage,
+    pageSize,
+    totalIssues,
+    batchProgress,
+    viewMode,
+    importedNotices,
+    selectedNoticeId,
+    selectedIssueId,
+    noticeIssues,
+
+    // 计算属性
+    hasFile,
+    fileName,
+    fileSize,
+    hasFiles,
+    filesCount,
+    totalFilesSize,
+
+    // 方法
+    setSelectedFile,
+    clearSelectedFile,
+    importDocument,
+    fetchIssues,
+    resetImport,
+    setSelectedFiles,
+    addSelectedFiles,
+    removeSelectedFile,
+    clearSelectedFiles,
+    importBatch,
+    resetBatchImport,
+    importFiles,
+    importSingleFile,
+    goToNoticesList,
+    selectNotice,
+    selectIssue,
+    goBackToNotices,
+    goBackToUpload
+  }
+})
+
