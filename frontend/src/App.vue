@@ -12,10 +12,10 @@
       <!-- 左侧菜单 -->
       <aside class="app-sidebar">
         <nav class="menu">
-          <div 
-            class="menu-item" 
+          <div
+            class="menu-item"
             :class="{ active: activeMenu === 'import' }"
-            @click="activeMenu = 'import'"
+            @click="handleImportMenuClick"
           >
             <span class="menu-icon">📥</span>
             <span class="menu-text">导入监督检查通知书</span>
@@ -75,9 +75,17 @@ import IssuesPage from './pages/IssuesPage.vue'
 import IssueDetailPage from './pages/IssueDetailPage.vue'
 import ProjectManagementPage from './pages/ProjectManagementPage.vue'
 import NoticeManagementPage from './pages/NoticeManagementPage.vue'
+import { useImportStore } from './stores/importStore'
 
 const activeMenu = ref('import')
 const selectedIssueId = ref(null)
+const importStore = useImportStore()
+
+const handleImportMenuClick = () => {
+  activeMenu.value = 'import'
+  // 重置导入状态，返回到导入界面
+  importStore.goBackToUpload()
+}
 
 const showIssueDetail = (issueId) => {
   console.log('🔴 App.vue: showIssueDetail 被调用，issueId:', issueId)
