@@ -236,6 +236,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useImportStore } from '../stores/importStore'
+import { useNoticeManagementStore } from '../stores/noticeManagementStore'
 import IssuesTable from '../components/IssuesTable.vue'
 import NoticesListComponent from '../components/NoticesListComponent.vue'
 import IssuesPreview from '../components/IssuesPreview.vue'
@@ -245,6 +246,7 @@ import { ElMessage } from 'element-plus'
 const emit = defineEmits(['show-detail'])
 
 const importStore = useImportStore()
+const noticeStore = useNoticeManagementStore()
 const fileInput = ref(null)
 
 // 计算导入状态
@@ -294,14 +296,18 @@ const handleImport = async () => {
   if (success) {
     if (importStore.filesCount === 1) {
       ElMessage.success('文件导入成功')
-      // 导入成功后，显示通知书列表
-      setTimeout(() => {
+      // 导入成功后，刷新通知书列表并显示
+      setTimeout(async () => {
+        // 刷新通知书列表
+        await noticeStore.fetchNotices()
         importStore.goToNoticesList()
       }, 500)
     } else {
       ElMessage.success('批量导入成功')
-      // 批量导入成功后，显示通知书列表
-      setTimeout(() => {
+      // 批量导入成功后，刷新通知书列表并显示
+      setTimeout(async () => {
+        // 刷新通知书列表
+        await noticeStore.fetchNotices()
         importStore.goToNoticesList()
       }, 500)
     }
