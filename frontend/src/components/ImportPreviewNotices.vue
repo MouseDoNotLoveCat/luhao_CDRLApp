@@ -9,7 +9,13 @@
       </template>
 
       <!-- 通知书列表 -->
-      <el-table :data="recognizedNotices" stripe border>
+      <el-table
+        ref="tableRef"
+        :data="recognizedNotices"
+        stripe
+        border
+        @selection-change="handleSelectionChange"
+      >
         <el-table-column type="selection" width="50" />
         <el-table-column prop="notice_number" label="通知书编号" width="150" />
         <el-table-column prop="check_date" label="检查日期" width="120" />

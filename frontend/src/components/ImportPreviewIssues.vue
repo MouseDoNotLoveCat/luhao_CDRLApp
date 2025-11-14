@@ -30,7 +30,13 @@
       </div>
 
       <!-- 问题列表 -->
-      <el-table :data="issues" stripe border max-height="500px">
+      <el-table
+        :data="issues"
+        stripe
+        border
+        max-height="500px"
+        @selection-change="handleTableSelectionChange"
+      >
         <el-table-column type="selection" width="50" />
         <el-table-column prop="description" label="问题描述" min-width="200" show-overflow-tooltip />
         <el-table-column prop="site_name" label="工点" width="100" />
@@ -115,6 +121,16 @@ const handleConfirm = () => {
     return
   }
   importStore.viewMode.value = 'confirm'
+}
+
+const handleTableSelectionChange = (selection) => {
+  selectedIssueIds.value.clear()
+  selection.forEach((row, index) => {
+    const rowIndex = issues.value.findIndex(issue => issue.id === row.id)
+    if (rowIndex !== -1) {
+      selectedIssueIds.value.add(rowIndex)
+    }
+  })
 }
 </script>
 
