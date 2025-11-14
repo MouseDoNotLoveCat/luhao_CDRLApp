@@ -450,7 +450,8 @@ export const useImportStore = defineStore('import', () => {
 
     try {
       const noticeData = recognizedNotices.value[0]
-      const selectedIds = Array.from(selectedIssueIds.value)
+      // 将选中的问题索引转换为后端期望的 ID 格式 (temp_0, temp_1, ...)
+      const selectedIds = Array.from(selectedIssueIds.value).map(index => `temp_${index}`)
 
       const result = await importService.importSelected(noticeData, selectedIds)
 
