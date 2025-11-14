@@ -18,11 +18,29 @@ export const useImportStore = defineStore('import', () => {
   const batchProgress = ref(0)  // 批量导入进度 (0-100)
 
   // 三层导航状态
-  const viewMode = ref('upload')  // 'upload' | 'notices' | 'issues' | 'detail'
+  const viewMode = ref('upload')  // 'upload' | 'recognizing' | 'preview-notices' | 'preview-issues' | 'confirm' | 'importing' | 'result' | 'notices' | 'issues' | 'detail'
   const importedNotices = ref([])  // 已导入的通知书列表
   const selectedNoticeId = ref(null)  // 当前选中的通知书 ID
   const selectedIssueId = ref(null)  // 当前选中的问题 ID
   const noticeIssues = ref([])  // 当前通知书的问题列表
+
+  // 新增：识别和缓存状态
+  const recognizedNotices = ref([])  // 识别的通知书列表
+  const recognizedIssues = ref([])  // 识别的问题列表
+  const currentRecognizedNoticeId = ref(null)  // 当前预览的通知书 ID
+
+  // 新增：用户选择状态
+  const selectedNoticeIds = ref(new Set())  // 选中的通知书 ID
+  const selectedIssueIds = ref(new Set())  // 选中的问题 ID
+
+  // 新增：编辑和验证状态
+  const editedData = ref({})  // 编辑的数据
+  const validationErrors = ref({})  // 验证错误
+  const modifiedRecords = ref(new Set())  // 已修改的记录
+
+  // 新增：导入流程状态
+  const importStep = ref(1)  // 导入步骤
+  const importProgress = ref(0)  // 导入进度 (0-100)
 
   // 计算属性
   const hasFile = computed(() => selectedFile.value !== null)
@@ -315,6 +333,159 @@ export const useImportStore = defineStore('import', () => {
     error.value = null
     issues.value = []
     batchProgress.value = 0
+    // 清空识别状态
+    recognizedNotices.value = []
+    recognizedIssues.value = []
+    currentRecognizedNoticeId.value = null
+    selectedNoticeIds.value = new Set()
+    selectedIssueIds.value = new Set()
+    editedData.value = {}
+    validationErrors.value = {}
+    modifiedRecords.value = new Set()
+    importStep.value = 1
+    importProgress.value = 0
+  }
+
+  // 新增：识别文档
+  const recognizeDocument = async () => {
+    if (selectedFiles.value.length === 0) {
+      error.value = '请先选择文件'
+      return false
+    }
+
+    isLoading.value = true
+    error.value = null
+    viewMode.value = 'recognizing'
+
+    try {
+      const file = selectedFiles.value[0]
+      const result = await importService.recognizeDocument(file)
+
+      if (!result.success) {
+        error.value = result.error
+        viewMode.value = 'upload'
+        return false
+      }
+
+      // 缓存识别结果
+      recognizedNotices.value = [result]
+      recognizedIssues.value = result.issues || []
+      currentRecognizedNoticeId.value = 0
+
+      // 转到预览通知书界面
+      viewMode.value = 'preview-notices'
+      return true
+    } catch (err) {
+      error.value = err.message || '识别失败'
+      viewMode.value = 'upload'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // 新增：预览通知书
+  const previewNotices = () => {
+    viewMode.value = 'preview-notices'
+  }
+
+  // 新增：预览问题
+  const previewIssues = () => {
+    viewMode.value = 'preview-issues'
+  }
+
+  // 新增：切换通知书选择
+  const toggleNoticeSelection = (noticeId) => {
+    if (selectedNoticeIds.value.has(noticeId)) {
+      selectedNoticeIds.value.delete(noticeId)
+    } else {
+      selectedNoticeIds.value.add(noticeId)
+    }
+  }
+
+  // 新增：切换问题选择
+  const toggleIssueSelection = (issueId) => {
+    if (selectedIssueIds.value.has(issueId)) {
+      selectedIssueIds.value.delete(issueId)
+    } else {
+      selectedIssueIds.value.add(issueId)
+    }
+  }
+
+  // 新增：编辑记录
+  const editRecord = (recordId, fieldName, value) => {
+    if (!editedData.value[recordId]) {
+      editedData.value[recordId] = {}
+    }
+    editedData.value[recordId][fieldName] = value
+    modifiedRecords.value.add(recordId)
+  }
+
+  // 新增：验证记录
+  const validateRecord = (recordId) => {
+    // 这里可以添加具体的验证逻辑
+    if (validationErrors.value[recordId]) {
+      delete validationErrors.value[recordId]
+    }
+  }
+
+  // 新增：验证所有记录
+  const validateAllRecords = () => {
+    validationErrors.value = {}
+    // 这里可以添加批量验证逻辑
+    return Object.keys(validationErrors.value).length === 0
+  }
+
+  // 新增：导入选中的记录
+  const importSelected = async () => {
+    if (selectedIssueIds.value.size === 0) {
+      error.value = '请先选择至少一个问题'
+      return false
+    }
+
+    viewMode.value = 'importing'
+    isLoading.value = true
+    error.value = null
+    importProgress.value = 0
+
+    try {
+      const noticeData = recognizedNotices.value[0]
+      const selectedIds = Array.from(selectedIssueIds.value)
+
+      const result = await importService.importSelected(noticeData, selectedIds)
+
+      if (!result.success) {
+        error.value = result.error
+        viewMode.value = 'preview-issues'
+        return false
+      }
+
+      importProgress.value = 100
+      viewMode.value = 'result'
+      importResult.value = result
+      return true
+    } catch (err) {
+      error.value = err.message || '导入失败'
+      viewMode.value = 'preview-issues'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // 新增：重置识别状态
+  const resetRecognition = () => {
+    recognizedNotices.value = []
+    recognizedIssues.value = []
+    currentRecognizedNoticeId.value = null
+    selectedNoticeIds.value = new Set()
+    selectedIssueIds.value = new Set()
+    editedData.value = {}
+    validationErrors.value = {}
+    modifiedRecords.value = new Set()
+    importStep.value = 1
+    importProgress.value = 0
+    viewMode.value = 'upload'
   }
 
   return {
@@ -336,6 +507,17 @@ export const useImportStore = defineStore('import', () => {
     selectedNoticeId,
     selectedIssueId,
     noticeIssues,
+    // 新增状态
+    recognizedNotices,
+    recognizedIssues,
+    currentRecognizedNoticeId,
+    selectedNoticeIds,
+    selectedIssueIds,
+    editedData,
+    validationErrors,
+    modifiedRecords,
+    importStep,
+    importProgress,
 
     // 计算属性
     hasFile,
@@ -363,7 +545,18 @@ export const useImportStore = defineStore('import', () => {
     selectNotice,
     selectIssue,
     goBackToNotices,
-    goBackToUpload
+    goBackToUpload,
+    // 新增方法
+    recognizeDocument,
+    previewNotices,
+    previewIssues,
+    toggleNoticeSelection,
+    toggleIssueSelection,
+    editRecord,
+    validateRecord,
+    validateAllRecords,
+    importSelected,
+    resetRecognition
   }
 })
 

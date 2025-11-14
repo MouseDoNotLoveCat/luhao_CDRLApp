@@ -338,6 +338,112 @@ class ImportService:
             print(f"❌ 插入隐患问题失败: {e}")
             return None
     
+    def recognize_word_document(self, file_path: str) -> Dict:
+        """
+        识别 Word 文档（只识别不导入）
+
+        Args:
+            file_path: Word 文件路径
+
+        Returns:
+            识别结果（包含通知书和问题列表，但不导入数据库）
+        """
+        # 解析文档
+        parse_result = parse_word_document(file_path)
+
+        if parse_result.get('status') == 'error':
+            return {
+                'success': False,
+                'file_name': parse_result['file_name'],
+                'error': parse_result['error']
+            }
+
+        try:
+            # 检查通知书是否已存在（重复检测）
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                "SELECT id FROM supervision_notices WHERE notice_number = ?",
+                (parse_result['notice_number'],)
+            )
+            existing_notice = cursor.fetchone()
+            conn.close()
+
+            if existing_notice:
+                return {
+                    'success': False,
+                    'duplicate': True,
+                    'notice_number': parse_result['notice_number'],
+                    'file_name': parse_result['file_name'],
+                    'error': f"通知书编号 {parse_result['notice_number']} 已存在，无需重复导入"
+                }
+
+            # 处理问题列表
+            issues_list = []
+
+            # 处理下发整改通知单的问题
+            for issue in parse_result['rectification_notices']:
+                issues_list.append({
+                    'id': f"temp_{len(issues_list)}",
+                    'site_name': issue.get('site_name'),
+                    'section_name': issue.get('section_name'),
+                    'section_code': issue.get('section_code'),
+                    'description': issue.get('description'),
+                    'is_rectification_notice': True,
+                    'document_section': 'rectification',
+                    'contractor': issue.get('contractor'),
+                    'supervisor': issue.get('supervisor'),
+                    'inspection_unit': issue.get('inspection_unit'),
+                    'inspection_date': issue.get('inspection_date'),
+                    'inspection_personnel': issue.get('inspection_personnel'),
+                    'rectification_requirements': issue.get('rectification_requirements'),
+                    'rectification_deadline': issue.get('rectification_deadline'),
+                    'responsible_unit': issue.get('responsible_unit')
+                })
+
+            # 处理其它问题
+            for issue in parse_result['other_issues']:
+                issues_list.append({
+                    'id': f"temp_{len(issues_list)}",
+                    'site_name': issue.get('site_name'),
+                    'section_name': issue.get('section_name'),
+                    'section_code': issue.get('section_code'),
+                    'description': issue.get('description'),
+                    'is_rectification_notice': False,
+                    'document_section': 'other',
+                    'contractor': issue.get('contractor'),
+                    'supervisor': issue.get('supervisor'),
+                    'inspection_unit': issue.get('inspection_unit'),
+                    'inspection_date': issue.get('inspection_date'),
+                    'inspection_personnel': issue.get('inspection_personnel'),
+                    'rectification_requirements': issue.get('rectification_requirements'),
+                    'rectification_deadline': issue.get('rectification_deadline'),
+                    'responsible_unit': issue.get('responsible_unit')
+                })
+
+            return {
+                'success': True,
+                'file_name': parse_result['file_name'],
+                'notice_number': parse_result['notice_number'],
+                'check_date': parse_result.get('check_date'),
+                'check_unit': parse_result.get('inspection_unit') or parse_result.get('check_unit'),
+                'check_personnel': parse_result.get('inspection_personnel') or parse_result.get('check_personnel'),
+                'builder_unit': parse_result.get('builder_unit'),
+                'project_name': parse_result.get('project_name'),
+                'rectification_notices_count': len(parse_result['rectification_notices']),
+                'other_issues_count': len(parse_result['other_issues']),
+                'total_issues_count': len(issues_list),
+                'issues': issues_list
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'file_name': parse_result['file_name'],
+                'error': str(e)
+            }
+
     def import_batch_documents(self, folder_path: str) -> Dict:
         """
         批量导入 Word 文档
@@ -376,4 +482,166 @@ class ImportService:
             results['details'].append(result)
 
         return results
+
+    def import_selected_issues(self, notice_data: Dict, selected_issue_ids: List[str]) -> Dict:
+        """
+        导入选中的问题
+
+        Args:
+            notice_data: 通知书数据（来自识别结果）
+            selected_issue_ids: 选中的问题 ID 列表
+
+        Returns:
+            导入结果
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # 1. 检查通知书是否已存在
+            cursor.execute(
+                "SELECT id FROM supervision_notices WHERE notice_number = ?",
+                (notice_data['notice_number'],)
+            )
+            existing_notice = cursor.fetchone()
+
+            if existing_notice:
+                conn.close()
+                return {
+                    'success': False,
+                    'duplicate': True,
+                    'notice_number': notice_data['notice_number'],
+                    'error': f"通知书编号 {notice_data['notice_number']} 已存在"
+                }
+
+            # 2. 插入监督通知书
+            notice_id = self._insert_supervision_notice_from_data(cursor, notice_data)
+            if not notice_id:
+                conn.close()
+                return {
+                    'success': False,
+                    'error': '通知书插入失败'
+                }
+
+            # 3. 插入项目
+            project_result = self._insert_project_from_data(cursor, notice_data)
+            if not project_result:
+                conn.close()
+                return {
+                    'success': False,
+                    'error': '项目插入失败'
+                }
+
+            project_id = project_result['id']
+
+            # 4. 导入选中的问题
+            imported_issues = []
+            for issue_data in notice_data['issues']:
+                if issue_data['id'] in selected_issue_ids:
+                    issue_id = self._insert_issue(cursor, notice_id, issue_data, project_id)
+                    if issue_id:
+                        imported_issues.append({
+                            'id': issue_id,
+                            'description': issue_data.get('description')
+                        })
+
+            conn.commit()
+            conn.close()
+
+            return {
+                'success': True,
+                'notice_id': notice_id,
+                'notice_number': notice_data['notice_number'],
+                'imported_issues_count': len(imported_issues),
+                'imported_issues': imported_issues
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def _insert_supervision_notice_from_data(self, cursor, notice_data: Dict) -> Optional[int]:
+        """
+        从识别数据插入监督通知书
+
+        Args:
+            cursor: 数据库游标
+            notice_data: 通知书数据
+
+        Returns:
+            通知书 ID
+        """
+        try:
+            cursor.execute("""
+                INSERT INTO supervision_notices
+                (notice_number, check_date, check_unit, check_personnel, inspection_basis)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                notice_data['notice_number'],
+                notice_data.get('check_date'),
+                notice_data.get('check_unit'),
+                notice_data.get('check_personnel'),
+                notice_data.get('inspection_basis')
+            ))
+
+            return cursor.lastrowid
+
+        except Exception as e:
+            print(f"❌ 插入监督通知书失败: {e}")
+            return None
+
+    def _insert_project_from_data(self, cursor, notice_data: Dict) -> Optional[Dict]:
+        """
+        从识别数据插入项目
+
+        Args:
+            cursor: 数据库游标
+            notice_data: 通知书数据
+
+        Returns:
+            项目信息字典
+        """
+        try:
+            project_name = notice_data.get('project_name') or '未知项目'
+            builder_unit = notice_data.get('builder_unit')
+
+            # 使用匹配器进行项目匹配
+            matcher = ProjectSectionMatcher(self.db_path)
+            match_result = matcher.match_project(project_name)
+
+            if match_result['status'] == 'error':
+                print(f"❌ 项目匹配失败: {match_result['message']}")
+                return None
+
+            # 如果是完全匹配或相近匹配，直接返回
+            if match_result['status'] in ['exact', 'similar']:
+                return {
+                    'id': match_result['project_id'],
+                    'name': match_result['project_name'],
+                    'status': match_result['status']
+                }
+
+            # 如果是新项目，插入数据库
+            if match_result['status'] == 'new':
+                cursor.execute("""
+                    INSERT INTO projects
+                    (project_name, builder_unit)
+                    VALUES (?, ?)
+                """, (
+                    project_name,
+                    builder_unit
+                ))
+
+                project_id = cursor.lastrowid
+                return {
+                    'id': project_id,
+                    'name': project_name,
+                    'status': 'new'
+                }
+
+        except Exception as e:
+            print(f"❌ 插入项目失败: {e}")
+            return None
 

@@ -4,13 +4,21 @@ FastAPI 主应用
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from pathlib import Path
 import tempfile
 import shutil
-from typing import List
+from typing import List, Dict
 
 from .services.import_service import ImportService
 from .services.project_section_matcher import ProjectSectionMatcher
+
+
+# 请求模型
+class ImportSelectedRequest(BaseModel):
+    """导入选中记录的请求模型"""
+    notice_data: Dict
+    selected_issue_ids: List[str]
 
 # 创建应用
 app = FastAPI(
@@ -42,14 +50,45 @@ async def root():
     }
 
 
+@app.post("/api/import/recognize")
+async def recognize_document(file: UploadFile = File(...)):
+    """
+    识别 Word 文档（只识别不导入）
+
+    Args:
+        file: Word 文件
+
+    Returns:
+        识别结果（包含通知书和问题列表）
+    """
+    try:
+        # 创建临时文件
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        # 识别文档
+        service = ImportService(str(DB_PATH))
+        result = service.recognize_word_document(tmp_path)
+
+        # 删除临时文件
+        Path(tmp_path).unlink()
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.post("/api/import/document")
 async def import_document(file: UploadFile = File(...)):
     """
     导入单个 Word 文档
-    
+
     Args:
         file: Word 文件
-    
+
     Returns:
         导入结果
     """
@@ -59,16 +98,16 @@ async def import_document(file: UploadFile = File(...)):
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
-        
+
         # 导入文档
         service = ImportService(str(DB_PATH))
         result = service.import_word_document(tmp_path)
-        
+
         # 删除临时文件
         Path(tmp_path).unlink()
-        
+
         return result
-        
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -77,33 +116,56 @@ async def import_document(file: UploadFile = File(...)):
 async def import_batch(files: List[UploadFile] = File(...)):
     """
     批量导入 Word 文档
-    
+
     Args:
         files: Word 文件列表
-    
+
     Returns:
         批量导入结果
     """
     try:
         # 创建临时目录
         tmp_dir = tempfile.mkdtemp()
-        
+
         # 保存所有文件
         for file in files:
             content = await file.read()
             file_path = Path(tmp_dir) / file.filename
             with open(file_path, 'wb') as f:
                 f.write(content)
-        
+
         # 批量导入
         service = ImportService(str(DB_PATH))
         result = service.import_batch_documents(tmp_dir)
-        
+
         # 删除临时目录
         shutil.rmtree(tmp_dir)
-        
+
         return result
-        
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/import/selected")
+async def import_selected(request: ImportSelectedRequest):
+    """
+    导入选中的问题
+
+    Args:
+        request: 包含通知书数据和选中的问题 ID 列表
+
+    Returns:
+        导入结果
+    """
+    try:
+        service = ImportService(str(DB_PATH))
+        result = service.import_selected_issues(
+            request.notice_data,
+            request.selected_issue_ids
+        )
+        return result
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

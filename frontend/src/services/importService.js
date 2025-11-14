@@ -46,6 +46,21 @@ export const importService = {
   // 获取问题详情
   async getIssueDetail(issueId) {
     return api.get(`/issues/${issueId}`)
+  },
+
+  // 识别文档（只识别不导入）
+  async recognizeDocument(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/import/recognize', formData)
+  },
+
+  // 导入选中的问题
+  async importSelected(noticeData, selectedIssueIds) {
+    return api.post('/import/selected', {
+      notice_data: noticeData,
+      selected_issue_ids: selectedIssueIds
+    })
   }
 }
 

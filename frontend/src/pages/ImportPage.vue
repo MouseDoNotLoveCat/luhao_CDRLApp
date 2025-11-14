@@ -216,6 +216,50 @@
       </div>
     </div>
 
+    <!-- 新增：识别中 -->
+    <div v-else-if="importStore.viewMode === 'recognizing'" class="import-container">
+      <el-card class="box-card">
+        <template #header>
+          <div class="card-header">
+            <span>🔄 正在识别文件...</span>
+          </div>
+        </template>
+        <el-progress :percentage="50" :indeterminate="true" />
+      </el-card>
+    </div>
+
+    <!-- 新增：预览通知书 -->
+    <div v-else-if="importStore.viewMode === 'preview-notices'">
+      <ImportPreviewNotices />
+    </div>
+
+    <!-- 新增：预览问题 -->
+    <div v-else-if="importStore.viewMode === 'preview-issues'">
+      <ImportPreviewIssues />
+    </div>
+
+    <!-- 新增：确认导入 -->
+    <div v-else-if="importStore.viewMode === 'confirm'">
+      <ImportConfirm />
+    </div>
+
+    <!-- 新增：导入中 -->
+    <div v-else-if="importStore.viewMode === 'importing'" class="import-container">
+      <el-card class="box-card">
+        <template #header>
+          <div class="card-header">
+            <span>⏳ 正在导入...</span>
+          </div>
+        </template>
+        <el-progress :percentage="importStore.importProgress" />
+      </el-card>
+    </div>
+
+    <!-- 新增：导入结果 -->
+    <div v-else-if="importStore.viewMode === 'result'">
+      <ImportResult />
+    </div>
+
     <!-- 第二层：通知书列表 -->
     <div v-else-if="importStore.viewMode === 'notices'">
       <NoticesListComponent />
@@ -241,6 +285,10 @@ import IssuesTable from '../components/IssuesTable.vue'
 import NoticesListComponent from '../components/NoticesListComponent.vue'
 import IssuesPreview from '../components/IssuesPreview.vue'
 import IssueDetailPreview from '../components/IssueDetailPreview.vue'
+import ImportPreviewNotices from '../components/ImportPreviewNotices.vue'
+import ImportPreviewIssues from '../components/ImportPreviewIssues.vue'
+import ImportConfirm from '../components/ImportConfirm.vue'
+import ImportResult from '../components/ImportResult.vue'
 import { ElMessage } from 'element-plus'
 
 const emit = defineEmits(['show-detail'])
@@ -290,23 +338,11 @@ const handleFileDrop = (event) => {
   }
 }
 
-// 统一导入处理
+// 统一导入处理 - 改为识别而不是直接导入
 const handleImport = async () => {
-  const success = await importStore.importFiles()
+  const success = await importStore.recognizeDocument()
   if (success) {
-    if (importStore.filesCount === 1) {
-      ElMessage.success('文件导入成功')
-      // 导入成功后，显示本次导入的通知书列表
-      setTimeout(() => {
-        importStore.goToNoticesList()
-      }, 500)
-    } else {
-      ElMessage.success('批量导入成功')
-      // 批量导入成功后，显示本次导入的通知书列表
-      setTimeout(() => {
-        importStore.goToNoticesList()
-      }, 500)
-    }
+    ElMessage.success('文件识别成功，请预览并选择要导入的内容')
   }
 }
 
