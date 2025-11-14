@@ -263,12 +263,18 @@ class ImportService:
                 print(f"⚠️ 标段匹配失败: {match_result['message']}")
                 # 继续处理，使用原始标段编号
                 section_id = None
+                # 使用 match_result 中的 section_name（如果原始为 None，则使用 section_code）
+                section_name = match_result.get('section_name') or section_code
             elif match_result['status'] in ['exact', 'similar']:
                 # 完全匹配或相近匹配
                 section_id = match_result['section_id']
+                # 使用 match_result 中的 section_name
+                section_name = match_result.get('section_name')
             else:
                 # 新标段，需要插入
                 section_id = None
+                # 使用 match_result 中的 section_name（如果原始为 None，则使用 section_code）
+                section_name = match_result.get('section_name') or section_code
 
             # 如果没有找到匹配的标段，则创建新标段
             if section_id is None:
