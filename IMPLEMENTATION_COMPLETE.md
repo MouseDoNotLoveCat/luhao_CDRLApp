@@ -73,10 +73,12 @@ acc55ba - fix: Fix table selection handling in preview components
 ## 下一步行动
 
 ### 立即可做
-1. 启动后端服务：`python -m uvicorn app.main:app --reload`
-2. 启动前端服务：`npm run dev`
-3. 在浏览器中测试导入功能
-4. 按照 IMPORT_TESTING_PLAN.md 执行测试用例
+1. 使用启动脚本：`./start-dev.sh`
+   - 自动启动后端服务（http://localhost:8000）
+   - 自动启动前端服务（http://localhost:3000）
+   - 自动安装依赖
+2. 在浏览器中访问：`http://localhost:3000`
+3. 按照 IMPORT_TESTING_PLAN.md 执行测试用例
 
 ### 后续优化（可选）
 1. 支持批量文件识别

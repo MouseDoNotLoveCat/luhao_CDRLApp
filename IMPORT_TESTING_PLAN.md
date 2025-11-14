@@ -2,17 +2,30 @@
 
 ## 测试环境准备
 
-### 后端启动
+### 使用启动脚本（推荐）
+```bash
+./start-dev.sh
+```
+
+这个脚本会自动：
+- 启动后端服务（http://localhost:8000）
+- 启动前端服务（http://localhost:3000）
+- 安装所有依赖
+
+### 或手动启动
+
+**后端启动**：
 ```bash
 cd backend
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 前端启动
+**前端启动**（新终端）：
 ```bash
 cd frontend
 npm run dev
 ```
+前端会在 http://localhost:3000 启动
 
 ## 测试用例
 
