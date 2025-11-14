@@ -64,7 +64,7 @@ const handleViewNotices = async () => {
   // 刷新通知书列表
   await noticeStore.fetchNotices()
   // 切换到通知书列表视图
-  importStore.viewMode.value = 'notices'
+  importStore.viewMode = 'notices'
 }
 </script>
 
