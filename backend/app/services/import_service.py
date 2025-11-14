@@ -272,18 +272,46 @@ class ImportService:
 
             # 如果没有找到匹配的标段，则创建新标段
             if section_id is None:
-                cursor.execute("""
-                    INSERT INTO sections
-                    (project_id, section_code, section_name, contractor_unit, supervisor_unit)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    project_id,
-                    section_code,
-                    section_name,
-                    issue.get('contractor'),
-                    issue.get('supervisor')
-                ))
-                section_id = cursor.lastrowid
+                try:
+                    # 先尝试查询是否已存在相同的标段（可能是由于匹配器未能识别）
+                    cursor.execute("""
+                        SELECT id FROM sections
+                        WHERE project_id = ? AND section_name = ?
+                    """, (project_id, section_name))
+                    existing_section = cursor.fetchone()
+
+                    if existing_section:
+                        # 标段已存在，使用现有的 section_id
+                        section_id = existing_section[0]
+                        print(f"✓ 标段已存在，使用现有标段 ID: {section_id}")
+                    else:
+                        # 标段不存在，创建新标段
+                        cursor.execute("""
+                            INSERT INTO sections
+                            (project_id, section_code, section_name, contractor_unit, supervisor_unit)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (
+                            project_id,
+                            section_code,
+                            section_name,
+                            issue.get('contractor'),
+                            issue.get('supervisor')
+                        ))
+                        section_id = cursor.lastrowid
+                        print(f"✓ 创建新标段，ID: {section_id}")
+                except sqlite3.IntegrityError as e:
+                    # 如果因为唯一性约束失败，查询现有的标段
+                    print(f"⚠️ 标段插入失败（唯一性约束）: {e}")
+                    cursor.execute("""
+                        SELECT id FROM sections
+                        WHERE project_id = ? AND section_name = ?
+                    """, (project_id, section_name))
+                    existing_section = cursor.fetchone()
+                    if existing_section:
+                        section_id = existing_section[0]
+                        print(f"✓ 使用现有标段 ID: {section_id}")
+                    else:
+                        raise
 
             # 生成问题编号（临时）
             issue_number = f"ISSUE_{notice_id}_{datetime.now().timestamp()}"
