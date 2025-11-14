@@ -120,7 +120,8 @@ const handleConfirm = () => {
     ElMessage.warning('请先选择至少一个问题')
     return
   }
-  importStore.viewMode.value = 'confirm'
+  // 转到确认导入界面
+  importStore.viewMode = 'confirm'
 }
 
 const handleTableSelectionChange = (selection) => {

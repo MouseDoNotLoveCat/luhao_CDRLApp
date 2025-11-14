@@ -61,13 +61,17 @@ const selectedNotices = computed(() => {
 })
 
 const handleViewIssues = (index) => {
-  importStore.currentRecognizedNoticeId.value = index
+  // 设置当前预览的通知书索引
+  importStore.currentRecognizedNoticeId = index
+  // 转到问题预览界面
   importStore.previewIssues()
 }
 
 const handleRemove = (index) => {
-  importStore.recognizedNotices.value.splice(index, 1)
-  if (importStore.recognizedNotices.value.length === 0) {
+  // 从识别的通知书列表中移除
+  recognizedNotices.value.splice(index, 1)
+  // 如果没有通知书了，返回上传界面
+  if (recognizedNotices.value.length === 0) {
     importStore.goBackToUpload()
   }
 }
