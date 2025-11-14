@@ -336,6 +336,10 @@ class ImportService:
 
         except Exception as e:
             print(f"❌ 插入隐患问题失败: {e}")
+            print(f"   问题数据: {issue}")
+            print(f"   通知书 ID: {notice_id}, 项目 ID: {project_id}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def recognize_word_document(self, file_path: str) -> Dict:
@@ -495,6 +499,11 @@ class ImportService:
             导入结果
         """
         try:
+            print(f"\n📋 开始导入选中的问题")
+            print(f"   选中的问题 ID 列表: {selected_issue_ids}")
+            print(f"   选中的问题数量: {len(selected_issue_ids)}")
+            print(f"   通知书中的总问题数: {len(notice_data.get('issues', []))}")
+
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
@@ -536,14 +545,33 @@ class ImportService:
 
             # 4. 导入选中的问题
             imported_issues = []
-            for issue_data in notice_data['issues']:
-                if issue_data['id'] in selected_issue_ids:
+            skipped_issues = []
+            failed_issues = []
+
+            for idx, issue_data in enumerate(notice_data.get('issues', [])):
+                issue_id_in_data = issue_data.get('id')
+
+                if issue_id_in_data in selected_issue_ids:
+                    print(f"   ✓ 导入问题 {idx}: {issue_id_in_data}")
                     issue_id = self._insert_issue(cursor, notice_id, issue_data, project_id)
                     if issue_id:
                         imported_issues.append({
                             'id': issue_id,
                             'description': issue_data.get('description')
                         })
+                    else:
+                        print(f"   ✗ 问题 {idx} ({issue_id_in_data}) 插入失败")
+                        failed_issues.append({
+                            'id': issue_id_in_data,
+                            'description': issue_data.get('description')
+                        })
+                else:
+                    skipped_issues.append(issue_id_in_data)
+
+            print(f"\n📊 导入统计:")
+            print(f"   成功导入: {len(imported_issues)} 个")
+            print(f"   导入失败: {len(failed_issues)} 个")
+            print(f"   跳过未选中: {len(skipped_issues)} 个")
 
             conn.commit()
             conn.close()
@@ -553,10 +581,15 @@ class ImportService:
                 'notice_id': notice_id,
                 'notice_number': notice_data['notice_number'],
                 'imported_issues_count': len(imported_issues),
-                'imported_issues': imported_issues
+                'imported_issues': imported_issues,
+                'failed_issues_count': len(failed_issues),
+                'failed_issues': failed_issues
             }
 
         except Exception as e:
+            print(f"❌ 导入过程中发生错误: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
                 'error': str(e)
