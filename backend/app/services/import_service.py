@@ -538,6 +538,16 @@ class ImportService:
             print(f"   选中的问题数量: {len(selected_issue_ids)}")
             print(f"   通知书中的总问题数: {len(notice_data.get('issues', []))}")
 
+            # 调试：打印前 3 个问题的 ID
+            issues_list = notice_data.get('issues', [])
+            if issues_list:
+                print(f"   前 3 个问题的 ID:")
+                for i, issue in enumerate(issues_list[:3]):
+                    print(f"      问题 {i}: id={issue.get('id')}, description={issue.get('description', '')[:50]}")
+            else:
+                print(f"   ⚠️ 警告：notice_data 中没有 issues 字段！")
+                print(f"   notice_data 的键: {list(notice_data.keys())}")
+
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
@@ -584,6 +594,7 @@ class ImportService:
 
             for idx, issue_data in enumerate(notice_data.get('issues', [])):
                 issue_id_in_data = issue_data.get('id')
+                print(f"   检查问题 {idx}: id={issue_id_in_data}, in selected={issue_id_in_data in selected_issue_ids}")
 
                 if issue_id_in_data in selected_issue_ids:
                     print(f"   ✓ 导入问题 {idx}: {issue_id_in_data}")
