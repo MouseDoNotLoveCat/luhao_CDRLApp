@@ -350,6 +350,7 @@ export const useImportStore = defineStore('import', () => {
   const recognizeDocument = async () => {
     if (selectedFiles.value.length === 0) {
       error.value = '请先选择文件'
+      console.error('❌ 识别失败: 未选择文件')
       return false
     }
 
@@ -359,13 +360,21 @@ export const useImportStore = defineStore('import', () => {
 
     try {
       const file = selectedFiles.value[0]
+      console.log('🔄 开始识别文件:', file.name, '大小:', file.size)
+
       const result = await importService.recognizeDocument(file)
 
-      if (!result.success) {
-        error.value = result.error
+      console.log('📦 收到识别结果:', result)
+
+      if (!result || !result.success) {
+        const errorMsg = result?.error || '识别失败，未收到有效响应'
+        error.value = errorMsg
+        console.error('❌ 识别失败:', errorMsg)
         viewMode.value = 'upload'
         return false
       }
+
+      console.log('✅ 识别成功，问题数:', result.issues?.length || 0)
 
       // 缓存识别结果
       recognizedNotices.value = [result]
@@ -376,7 +385,17 @@ export const useImportStore = defineStore('import', () => {
       viewMode.value = 'preview-notices'
       return true
     } catch (err) {
-      error.value = err.message || '识别失败'
+      // 检查是否是超时错误
+      let errorMsg = err.message || '识别失败'
+
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        errorMsg = '识别超时：文件处理耗时过长，请稍候或尝试使用较小的文件'
+        console.error('⏱️  识别超时：请求在 5 分钟后仍未完成')
+      }
+
+      error.value = errorMsg
+      console.error('❌ 识别异常:', err)
+      console.error('   错误详情:', err.response?.data || err)
       viewMode.value = 'upload'
       return false
     } finally {
@@ -421,6 +440,31 @@ export const useImportStore = defineStore('import', () => {
     modifiedRecords.value.add(recordId)
   }
 
+  // 新增：更新识别的问题（行内编辑）
+  const updateRecognizedIssue = (issueIndex, fieldName, value) => {
+    if (issueIndex >= 0 && issueIndex < recognizedIssues.value.length) {
+      recognizedIssues.value[issueIndex][fieldName] = value
+      modifiedRecords.value.add(`issue_${issueIndex}`)
+    }
+  }
+
+  // 新增：根据项目名称获取标段列表
+  const fetchSectionsByProject = async (projectName) => {
+    try {
+      if (!projectName) return []
+      const response = await fetch(`/api/sections?project_name=${encodeURIComponent(projectName)}`)
+      if (!response.ok) {
+        console.error('Failed to fetch sections:', response.statusText)
+        return []
+      }
+      const data = await response.json()
+      return data || []
+    } catch (error) {
+      console.error('Error fetching sections:', error)
+      return []
+    }
+  }
+
   // 新增：验证记录
   const validateRecord = (recordId) => {
     // 这里可以添加具体的验证逻辑
@@ -450,10 +494,19 @@ export const useImportStore = defineStore('import', () => {
 
     try {
       const noticeData = recognizedNotices.value[0]
-      // 将选中的问题索引转换为后端期望的 ID 格式 (temp_0, temp_1, ...)
-      const selectedIds = Array.from(selectedIssueIds.value).map(index => `temp_${index}`)
 
-      const result = await importService.importSelected(noticeData, selectedIds)
+      // 构建选中的完整问题数据（包括用户编辑的字段）
+      const selectedIssues = recognizedIssues.value.filter((_, index) =>
+        selectedIssueIds.value.has(index)
+      )
+
+      // 更新 noticeData 中的 issues 为选中的问题
+      const updatedNoticeData = {
+        ...noticeData,
+        issues: selectedIssues
+      }
+
+      const result = await importService.importSelected(updatedNoticeData, Array.from(selectedIssueIds.value))
 
       if (!result.success) {
         error.value = result.error
@@ -554,6 +607,8 @@ export const useImportStore = defineStore('import', () => {
     toggleNoticeSelection,
     toggleIssueSelection,
     editRecord,
+    updateRecognizedIssue,
+    fetchSectionsByProject,
     validateRecord,
     validateAllRecords,
     importSelected,

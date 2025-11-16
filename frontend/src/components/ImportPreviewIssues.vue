@@ -27,6 +27,10 @@
         <el-button type="primary" link @click="handleSelectOther">
           选择其他问题
         </el-button>
+        <el-divider direction="vertical" />
+        <el-button type="warning" @click="handleEdit">
+          ✏️ 编辑问题
+        </el-button>
       </div>
 
       <!-- 问题列表 -->
@@ -122,6 +126,11 @@ const handleConfirm = () => {
   }
   // 转到确认导入界面
   importStore.viewMode = 'confirm'
+}
+
+const handleEdit = () => {
+  // 转到编辑界面
+  importStore.viewMode = 'edit-issues'
 }
 
 const handleTableSelectionChange = (selection) => {

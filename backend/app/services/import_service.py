@@ -4,12 +4,16 @@
 """
 
 import sqlite3
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
 from ..parsers.word_parser import parse_word_document
 from .project_section_matcher import ProjectSectionMatcher
 from .issue_category_classifier import IssueCategoryClassifier
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 class ImportService:
@@ -175,7 +179,7 @@ class ImportService:
             match_result = matcher.match_project(project_name)
 
             if match_result['status'] == 'error':
-                print(f"❌ 项目匹配失败: {match_result['message']}")
+                logger.error(f"❌ 项目匹配失败: {match_result['message']}")
                 return None
 
             # 如果是完全匹配或相近匹配，直接返回
@@ -207,7 +211,7 @@ class ImportService:
                 }
 
         except Exception as e:
-            print(f"❌ 插入项目失败: {e}")
+            logger.error(f"❌ 插入项目失败: {e}")
             return None
 
     def _insert_supervision_notice(self, cursor, parse_result: Dict) -> Optional[int]:
@@ -234,9 +238,9 @@ class ImportService:
             return cursor.lastrowid
 
         except Exception as e:
-            print(f"❌ 插入监督通知书失败: {e}")
+            logger.error(f"❌ 插入监督通知书失败: {e}")
             return None
-    
+
     def _insert_issue(self, cursor, notice_id: int, issue: Dict, project_id: int) -> Optional[int]:
         """
         插入隐患问题
@@ -251,39 +255,11 @@ class ImportService:
             问题 ID
         """
         try:
-            # 获取或创建标段
-            section_code = issue.get('section_code') or '未知标段'
-            section_name = issue.get('section_name')
-
-            # 使用匹配器进行标段匹配
-            matcher = ProjectSectionMatcher(self.db_path)
-            match_result = matcher.match_section(project_id, section_code, section_name)
-
-            if match_result['status'] == 'error':
-                print(f"⚠️ 标段匹配失败: {match_result['message']}")
-                # 继续处理，使用原始标段编号
-                section_id = None
-            elif match_result['status'] in ['exact', 'similar']:
-                # 完全匹配或相近匹配
-                section_id = match_result['section_id']
-            else:
-                # 新标段，需要插入
-                section_id = None
-
-            # 如果没有找到匹配的标段，则创建新标段
-            if section_id is None:
-                cursor.execute("""
-                    INSERT INTO sections
-                    (project_id, section_code, section_name, contractor_unit, supervisor_unit)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    project_id,
-                    section_code,
-                    section_name,
-                    issue.get('contractor'),
-                    issue.get('supervisor')
-                ))
-                section_id = cursor.lastrowid
+            # 直接使用标段名称（不再进行复杂的标段匹配）
+            section_name = issue.get('section_name') or '未知标段'
+            logger.info(f"\n[DEBUG] 处理标段信息:")
+            logger.info(f"   section_name: {section_name}")
+            logger.info(f"   project_id: {project_id}")
 
             # 生成问题编号（临时）
             issue_number = f"ISSUE_{notice_id}_{datetime.now().timestamp()}"
@@ -291,55 +267,90 @@ class ImportService:
             # 使用本地时间戳而不是 SQLite 的 UTC 时间戳
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # 使用分类器自动识别问题类别
-            issue_category = IssueCategoryClassifier.classify(
-                description=issue['description'],
-                site_name=issue.get('site_name'),
-                section_name=issue.get('section_name')
-            )
+            # 优先使用用户编辑的问题类别，只在为空时才使用自动分类
+            issue_category = issue.get('issue_category')
 
-            # 如果分类器无法识别，默认设为施工安全
-            if not issue_category or issue_category == '其它':
-                issue_category = '施工安全'
+            if not issue_category:
+                # 使用分类器自动识别问题类别
+                issue_category = IssueCategoryClassifier.classify(
+                    description=issue['description'],
+                    site_name=issue.get('site_name'),
+                    section_name=issue.get('section_name')
+                )
 
-            cursor.execute("""
-                INSERT INTO issues
-                (issue_number, supervision_notice_id, section_id, site_name, description,
-                 is_rectification_notice, is_bad_behavior_notice, document_section, document_source,
-                 severity, issue_category, inspection_unit, inspection_date, inspection_personnel,
-                 rectification_requirements, rectification_deadline, responsible_unit,
-                 created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                issue_number,
-                notice_id,
-                section_id,
-                issue.get('site_name'),
-                issue['description'],
-                issue['is_rectification_notice'],
-                issue.get('is_bad_behavior_notice', False),
-                issue['document_section'],
-                'word',
-                3,  # 默认等级为 3
-                issue_category,  # 使用分类器识别的分类
-                issue.get('inspection_unit'),
-                issue.get('inspection_date'),
-                issue.get('inspection_personnel'),
-                issue.get('rectification_requirements'),
-                issue.get('rectification_deadline'),
-                issue.get('responsible_unit'),
-                now,
-                now
-            ))
+                # 如果分类器无法识别，默认设为施工安全
+                if not issue_category or issue_category == '其它':
+                    issue_category = '施工安全'
 
-            return cursor.lastrowid
+            logger.info(f"[DEBUG] 问题类别来源: {'用户编辑' if issue.get('issue_category') else '自动分类'}")
+            logger.info(f"[DEBUG] issue_category: {issue_category}")
+            logger.info(f"[DEBUG] issue_type_level1: {issue.get('issue_type_level1')}")
+            logger.info(f"[DEBUG] issue_type_level2: {issue.get('issue_type_level2')}")
+
+            logger.info(f"\n[DEBUG] 准备插入问题记录:")
+            logger.info(f"   issue_number: {issue_number}")
+            logger.info(f"   supervision_notice_id: {notice_id}")
+            logger.info(f"   section_name: {section_name}")
+            logger.info(f"   site_name: {issue.get('site_name')}")
+            logger.info(f"   description: {issue['description'][:100]}...")
+            logger.info(f"   is_rectification_notice: {issue['is_rectification_notice']}")
+            logger.info(f"   is_bad_behavior_notice: {issue.get('is_bad_behavior_notice', False)}")
+            logger.info(f"   document_section: {issue['document_section']}")
+            logger.info(f"   issue_category: {issue_category}")
+            logger.info(f"   inspection_unit: {issue.get('inspection_unit')}")
+            logger.info(f"   inspection_date: {issue.get('inspection_date')}")
+            logger.info(f"   inspection_personnel: {issue.get('inspection_personnel')}")
+            logger.info(f"   rectification_requirements: {issue.get('rectification_requirements')}")
+            logger.info(f"   rectification_deadline: {issue.get('rectification_deadline')}")
+            logger.info(f"   responsible_unit: {issue.get('responsible_unit')}")
+
+            try:
+                cursor.execute("""
+                    INSERT INTO issues
+                    (issue_number, supervision_notice_id, section_name, site_name, description,
+                     is_rectification_notice, is_bad_behavior_notice, document_section, document_source,
+                     severity, issue_category, issue_type_level1, issue_type_level2, inspection_unit, inspection_date, inspection_personnel,
+                     rectification_requirements, rectification_deadline, responsible_unit, responsible_person,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    issue_number,
+                    notice_id,
+                    section_name,
+                    issue.get('site_name'),
+                    issue['description'],
+                    issue['is_rectification_notice'],
+                    issue.get('is_bad_behavior_notice', False),
+                    issue['document_section'],
+                    'word',
+                    3,  # 默认等级为 3
+                    issue_category,  # 使用用户编辑的分类或自动分类
+                    issue.get('issue_type_level1'),  # 用户编辑的二级分类
+                    issue.get('issue_type_level2'),  # 用户编辑的三级分类
+                    issue.get('inspection_unit'),
+                    issue.get('inspection_date'),
+                    issue.get('inspection_personnel'),
+                    issue.get('rectification_requirements'),
+                    issue.get('rectification_deadline'),
+                    issue.get('responsible_unit'),
+                    issue.get('responsible_person'),
+                    now,
+                    now
+                ))
+                issue_id = cursor.lastrowid
+                logger.info(f"[DEBUG] ✅ 问题插入成功: issue_id={issue_id}")
+                return issue_id
+            except Exception as issue_err:
+                logger.error(f"[ERROR] ❌ 问题插入失败: {issue_err}")
+                logger.error(f"   错误类型: {type(issue_err).__name__}")
+                raise
 
         except Exception as e:
-            print(f"❌ 插入隐患问题失败: {e}")
-            print(f"   问题数据: {issue}")
-            print(f"   通知书 ID: {notice_id}, 项目 ID: {project_id}")
+            logger.error(f"❌ 插入隐患问题失败: {e}")
+            logger.error(f"   问题数据: {issue}")
+            logger.error(f"   通知书 ID: {notice_id}, 项目 ID: {project_id}")
             import traceback
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
             return None
     
     def recognize_word_document(self, file_path: str) -> Dict:
@@ -499,10 +510,10 @@ class ImportService:
             导入结果
         """
         try:
-            print(f"\n📋 开始导入选中的问题")
-            print(f"   选中的问题 ID 列表: {selected_issue_ids}")
-            print(f"   选中的问题数量: {len(selected_issue_ids)}")
-            print(f"   通知书中的总问题数: {len(notice_data.get('issues', []))}")
+            logger.info(f"\n📋 开始导入选中的问题")
+            logger.info(f"   选中的问题 ID 列表: {selected_issue_ids}")
+            logger.info(f"   选中的问题数量: {len(selected_issue_ids)}")
+            logger.info(f"   通知书中的总问题数: {len(notice_data.get('issues', []))}")
 
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -549,10 +560,9 @@ class ImportService:
             failed_issues = []
 
             for idx, issue_data in enumerate(notice_data.get('issues', [])):
-                issue_id_in_data = issue_data.get('id')
-
-                if issue_id_in_data in selected_issue_ids:
-                    print(f"   ✓ 导入问题 {idx}: {issue_id_in_data}")
+                # 使用数组索引进行匹配（前端传递的是索引）
+                if idx in selected_issue_ids:
+                    logger.info(f"   ✓ 导入问题 {idx}: {issue_data.get('description', '')[:50]}...")
                     issue_id = self._insert_issue(cursor, notice_id, issue_data, project_id)
                     if issue_id:
                         imported_issues.append({
@@ -560,18 +570,18 @@ class ImportService:
                             'description': issue_data.get('description')
                         })
                     else:
-                        print(f"   ✗ 问题 {idx} ({issue_id_in_data}) 插入失败")
+                        logger.error(f"   ✗ 问题 {idx} 插入失败")
                         failed_issues.append({
-                            'id': issue_id_in_data,
+                            'id': idx,
                             'description': issue_data.get('description')
                         })
                 else:
-                    skipped_issues.append(issue_id_in_data)
+                    skipped_issues.append(idx)
 
-            print(f"\n📊 导入统计:")
-            print(f"   成功导入: {len(imported_issues)} 个")
-            print(f"   导入失败: {len(failed_issues)} 个")
-            print(f"   跳过未选中: {len(skipped_issues)} 个")
+            logger.info(f"\n📊 导入统计:")
+            logger.info(f"   成功导入: {len(imported_issues)} 个")
+            logger.info(f"   导入失败: {len(failed_issues)} 个")
+            logger.info(f"   跳过未选中: {len(skipped_issues)} 个")
 
             conn.commit()
             conn.close()
@@ -587,9 +597,9 @@ class ImportService:
             }
 
         except Exception as e:
-            print(f"❌ 导入过程中发生错误: {e}")
+            logger.error(f"❌ 导入过程中发生错误: {e}")
             import traceback
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
             return {
                 'success': False,
                 'error': str(e)

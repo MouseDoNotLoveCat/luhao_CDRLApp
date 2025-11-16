@@ -63,8 +63,8 @@ const selectedNotices = computed(() => {
 const handleViewIssues = (index) => {
   // 设置当前预览的通知书索引
   importStore.currentRecognizedNoticeId = index
-  // 转到问题预览界面
-  importStore.previewIssues()
+  // 直接转到问题编辑界面，跳过问题浏览界面
+  importStore.viewMode = 'edit-issues'
 }
 
 const handleRemove = (index) => {

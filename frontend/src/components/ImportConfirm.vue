@@ -37,11 +37,59 @@
 
       <!-- 选中问题列表 -->
       <div class="selected-issues">
-        <h4>选中的问题列表</h4>
-        <el-table :data="selectedIssues" stripe border max-height="300px">
-          <el-table-column prop="description" label="问题描述" min-width="200" show-overflow-tooltip />
-          <el-table-column prop="site_name" label="工点" width="100" />
+        <h4>选中的问题列表（共 {{ selectedIssues.length }} 个）</h4>
+        <el-table :data="selectedIssues" stripe border max-height="600px">
+          <!-- 序号 -->
+          <el-table-column type="index" label="序号" width="60" />
+
+          <!-- 基本信息 -->
           <el-table-column prop="section_name" label="标段" width="100" />
+          <el-table-column prop="site_name" label="工点" width="100" />
+          <el-table-column prop="description" label="问题描述" min-width="150" show-overflow-tooltip />
+
+          <!-- 问题分类 -->
+          <el-table-column prop="issue_category" label="问题类别" width="100" />
+          <el-table-column prop="issue_type_level1" label="问题子类1" width="100" />
+          <el-table-column prop="issue_type_level2" label="问题子类2" width="100" />
+
+          <!-- 严重程度 -->
+          <el-table-column prop="severity" label="严重程度" width="100">
+            <template #default="{ row }">
+              <el-tag :type="getSeverityType(row.severity)">
+                {{ getSeverityLabel(row.severity) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <!-- 通知类型 -->
+          <el-table-column label="整改通知" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.is_rectification_notice ? 'success' : 'info'">
+                {{ row.is_rectification_notice ? '是' : '否' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="不良行为" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.is_bad_behavior_notice ? 'warning' : 'info'">
+                {{ row.is_bad_behavior_notice ? '是' : '否' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <!-- 检查信息 -->
+          <el-table-column prop="inspection_unit" label="检查单位" width="120" show-overflow-tooltip />
+          <el-table-column prop="inspection_date" label="检查日期" width="100" />
+          <el-table-column prop="inspection_personnel" label="检查人员" width="100" show-overflow-tooltip />
+
+          <!-- 整改信息 -->
+          <el-table-column prop="rectification_requirements" label="整改要求" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="rectification_deadline" label="整改期限" width="100" />
+
+          <!-- 责任信息 -->
+          <el-table-column prop="responsible_unit" label="责任单位" width="120" show-overflow-tooltip />
+          <el-table-column prop="responsible_person" label="责任人" width="100" />
         </el-table>
       </div>
 
@@ -74,15 +122,39 @@ const currentNotice = computed(() => {
 const selectedIssueIds = computed(() => importStore.selectedIssueIds)
 
 const selectedIssues = computed(() => {
-  return importStore.recognizedIssues.filter((_, index) => 
+  return importStore.recognizedIssues.filter((_, index) =>
     selectedIssueIds.value.has(index)
   )
 })
 
 const isLoading = computed(() => importStore.isLoading)
 
+// 获取严重程度的标签
+const getSeverityLabel = (severity) => {
+  const labels = {
+    1: '1 - 轻微',
+    2: '2 - 一般',
+    3: '3 - 中等',
+    4: '4 - 严重',
+    5: '5 - 极严重'
+  }
+  return labels[severity] || '未设置'
+}
+
+// 获取严重程度的标签类型
+const getSeverityType = (severity) => {
+  const types = {
+    1: 'success',
+    2: 'info',
+    3: 'warning',
+    4: 'danger',
+    5: 'danger'
+  }
+  return types[severity] || 'info'
+}
+
 const handleBack = () => {
-  importStore.previewIssues()
+  importStore.viewMode = 'edit-issues'
 }
 
 const handleCancel = () => {

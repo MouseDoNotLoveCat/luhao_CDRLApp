@@ -52,7 +52,35 @@ export const importService = {
   async recognizeDocument(file) {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post('/import/recognize', formData)
+
+    console.log('📤 发送识别请求:', {
+      url: '/import/recognize',
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      timeout: '300000ms (5分钟)'
+    })
+
+    try {
+      const response = await api.post('/import/recognize', formData)
+      console.log('📥 收到识别响应:', response)
+      return response
+    } catch (error) {
+      console.error('❌ 识别请求失败:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+        code: error.code
+      })
+
+      // 检查是否是超时错误
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        console.error('⏱️  请求超时：文件处理耗时过长，请稍候...')
+      }
+
+      throw error
+    }
   },
 
   // 导入选中的问题

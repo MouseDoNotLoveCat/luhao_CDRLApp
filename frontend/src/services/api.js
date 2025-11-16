@@ -5,7 +5,7 @@ const API_BASE_URL = '/api'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000
+  timeout: 300000  // 增加到 300 秒（5 分钟），防止大文件处理超时
 })
 
 // 请求拦截器
@@ -15,9 +15,19 @@ api.interceptors.request.use(
     if (!(config.data instanceof FormData)) {
       config.headers['Content-Type'] = 'application/json'
     }
+
+    console.log('📤 发送 API 请求:', {
+      method: config.method?.toUpperCase(),
+      url: config.url,
+      baseURL: config.baseURL,
+      timeout: config.timeout,
+      headers: config.headers
+    })
+
     return config
   },
   error => {
+    console.error('❌ 请求拦截器错误:', error)
     return Promise.reject(error)
   }
 )
@@ -25,12 +35,23 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
   response => {
-    console.log('API Response:', response.data)
+    console.log('✅ API 响应成功:', {
+      status: response.status,
+      statusText: response.statusText,
+      url: response.config.url,
+      data: response.data
+    })
     return response.data
   },
   error => {
-    console.error('API Error:', error)
-    console.error('Error response:', error.response)
+    console.error('❌ API 请求失败:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+      data: error.response?.data,
+      headers: error.response?.headers
+    })
     return Promise.reject(error)
   }
 )

@@ -238,6 +238,11 @@
       <ImportPreviewIssues />
     </div>
 
+    <!-- 新增：编辑问题 -->
+    <div v-else-if="importStore.viewMode === 'edit-issues'">
+      <ImportIssuesEditor />
+    </div>
+
     <!-- 新增：确认导入 -->
     <div v-else-if="importStore.viewMode === 'confirm'">
       <ImportConfirm />
@@ -287,6 +292,7 @@ import IssuesPreview from '../components/IssuesPreview.vue'
 import IssueDetailPreview from '../components/IssueDetailPreview.vue'
 import ImportPreviewNotices from '../components/ImportPreviewNotices.vue'
 import ImportPreviewIssues from '../components/ImportPreviewIssues.vue'
+import ImportIssuesEditor from '../components/ImportIssuesEditor.vue'
 import ImportConfirm from '../components/ImportConfirm.vue'
 import ImportResult from '../components/ImportResult.vue'
 import { ElMessage } from 'element-plus'

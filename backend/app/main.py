@@ -17,8 +17,8 @@ from .services.project_section_matcher import ProjectSectionMatcher
 # 请求模型
 class ImportSelectedRequest(BaseModel):
     """导入选中记录的请求模型"""
-    notice_data: Dict
-    selected_issue_ids: List[str]
+    notice_data: Dict  # 包含完整的问题数据（包括用户编辑的字段）
+    selected_issue_ids: List  # 选中的问题索引列表
 
 # 创建应用
 app = FastAPI(
@@ -50,7 +50,7 @@ async def root():
     }
 
 
-@app.post("/api/import/recognize")
+@app.post("/import/recognize")
 async def recognize_document(file: UploadFile = File(...)):
     """
     识别 Word 文档（只识别不导入）
@@ -61,16 +61,32 @@ async def recognize_document(file: UploadFile = File(...)):
     Returns:
         识别结果（包含通知书和问题列表）
     """
+    import time
+    start_time = time.time()
+
     try:
+        print(f"📥 收到识别请求: {file.filename}, 大小: {file.size}")
+
         # 创建临时文件
+        file_read_start = time.time()
         with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
+        file_read_time = time.time() - file_read_start
+        print(f"📝 临时文件已创建: {tmp_path} (耗时: {file_read_time:.2f}s)")
 
         # 识别文档
+        parse_start = time.time()
         service = ImportService(str(DB_PATH))
         result = service.recognize_word_document(tmp_path)
+        parse_time = time.time() - parse_start
+
+        total_time = time.time() - start_time
+        print(f"✅ 识别成功: {len(result.get('issues', []))} 个问题")
+        print(f"   文件读取: {file_read_time:.2f}s")
+        print(f"   文档解析: {parse_time:.2f}s")
+        print(f"   总耗时: {total_time:.2f}s")
 
         # 删除临时文件
         Path(tmp_path).unlink()
@@ -78,10 +94,14 @@ async def recognize_document(file: UploadFile = File(...)):
         return result
 
     except Exception as e:
+        total_time = time.time() - start_time
+        print(f"❌ 识别失败 (耗时: {total_time:.2f}s): {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/import/document")
+@app.post("/import/document")
 async def import_document(file: UploadFile = File(...)):
     """
     导入单个 Word 文档
@@ -112,7 +132,7 @@ async def import_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/import/batch")
+@app.post("/import/batch")
 async def import_batch(files: List[UploadFile] = File(...)):
     """
     批量导入 Word 文档
@@ -147,7 +167,7 @@ async def import_batch(files: List[UploadFile] = File(...)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/import/selected")
+@app.post("/import/selected")
 async def import_selected(request: ImportSelectedRequest):
     """
     导入选中的问题
@@ -170,11 +190,11 @@ async def import_selected(request: ImportSelectedRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/api/statistics")
+@app.get("/statistics")
 async def get_statistics():
     """
     获取统计信息
-    
+
     Returns:
         统计数据
     """
@@ -217,7 +237,7 @@ async def get_statistics():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/issues")
+@app.get("/issues")
 async def get_issues(
     limit: int = 10,
     offset: int = 0,
@@ -281,7 +301,7 @@ async def get_issues(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/issues/{issue_id}")
+@app.get("/issues/{issue_id}")
 async def get_issue_detail(issue_id: int):
     """
     获取问题详情
@@ -331,7 +351,7 @@ async def get_issue_detail(issue_id: int):
 
 # ==================== 通知书管理 API ====================
 
-@app.get("/api/notices")
+@app.get("/notices")
 async def get_notices(search: str = "", limit: int = 20, offset: int = 0):
     """
     获取通知书列表
@@ -401,7 +421,7 @@ async def get_notices(search: str = "", limit: int = 20, offset: int = 0):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/notices/{notice_id}")
+@app.get("/notices/{notice_id}")
 async def get_notice(notice_id: int):
     """
     获取通知书详情及其关联的问题列表
@@ -482,7 +502,7 @@ async def get_notice(notice_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/api/notices/{notice_id}")
+@app.delete("/notices/{notice_id}")
 async def delete_notice(notice_id: int):
     """
     删除通知书及其关联的所有问题
@@ -540,7 +560,7 @@ async def delete_notice(notice_id: int):
 
 # ==================== 项目管理 API ====================
 
-@app.get("/api/projects")
+@app.get("/projects")
 async def get_projects(search: str = "", limit: int = 100, offset: int = 0):
     """
     获取项目列表
@@ -602,7 +622,7 @@ async def get_projects(search: str = "", limit: int = 100, offset: int = 0):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/projects/{project_id}")
+@app.get("/projects/{project_id}")
 async def get_project(project_id: int):
     """
     获取单个项目详情
@@ -643,7 +663,7 @@ async def get_project(project_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/projects")
+@app.post("/projects")
 async def create_project(project_name: str, builder_unit: str = ""):
     """
     新建项目
@@ -691,7 +711,7 @@ async def create_project(project_name: str, builder_unit: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.put("/api/projects/{project_id}")
+@app.put("/projects/{project_id}")
 async def update_project(project_id: int, project_name: str, builder_unit: str = ""):
     """
     修改项目
@@ -742,7 +762,7 @@ async def update_project(project_id: int, project_name: str, builder_unit: str =
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/api/projects/{project_id}")
+@app.delete("/projects/{project_id}")
 async def delete_project(project_id: int, cascade: bool = False):
     """
     删除项目
@@ -800,7 +820,88 @@ async def delete_project(project_id: int, cascade: bool = False):
 
 # ==================== 标段管理 API ====================
 
-@app.get("/api/projects/{project_id}/sections")
+@app.get("/sections")
+async def get_sections_by_project(project_name: str = "", limit: int = 100, offset: int = 0):
+    """
+    根据项目名称获取标段列表
+
+    Args:
+        project_name: 项目名称
+        limit: 限制数量
+        offset: 偏移量
+
+    Returns:
+        标段列表
+    """
+    try:
+        import sqlite3
+
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+
+        # 如果提供了项目名称，先查询项目 ID
+        project_id = None
+        if project_name:
+            cursor.execute("SELECT id FROM projects WHERE project_name = ?", (project_name,))
+            result = cursor.fetchone()
+            if result:
+                project_id = result[0]
+            else:
+                # 项目不存在，返回空列表
+                conn.close()
+                return {
+                    'total': 0,
+                    'data': []
+                }
+
+        # 构建查询条件
+        if project_id:
+            where_clause = "WHERE project_id = ?"
+            params = [project_id]
+        else:
+            where_clause = ""
+            params = []
+
+        # 获取总数
+        count_query = f"SELECT COUNT(*) FROM sections {where_clause}"
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()[0]
+
+        # 获取列表
+        query = f"""
+            SELECT id, project_id, section_name, contractor_unit, supervisor_unit, designer_unit, testing_unit, created_at, updated_at
+            FROM sections
+            {where_clause}
+            ORDER BY section_name ASC
+            LIMIT ? OFFSET ?
+        """
+        cursor.execute(query, params + [limit, offset])
+        rows = cursor.fetchall()
+        conn.close()
+
+        return {
+            'total': total,
+            'data': [
+                {
+                    'id': row[0],
+                    'project_id': row[1],
+                    'section_name': row[2],
+                    'contractor_unit': row[3],
+                    'supervisor_unit': row[4],
+                    'designer_unit': row[5],
+                    'testing_unit': row[6],
+                    'created_at': row[7],
+                    'updated_at': row[8]
+                }
+                for row in rows
+            ]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/projects/{project_id}/sections")
 async def get_sections(project_id: int, search: str = "", limit: int = 100, offset: int = 0):
     """
     获取某项目的标段列表
@@ -875,7 +976,7 @@ async def get_sections(project_id: int, search: str = "", limit: int = 100, offs
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/sections/{section_id}")
+@app.get("/sections/{section_id}")
 async def get_section(section_id: int):
     """
     获取单个标段详情
@@ -920,7 +1021,7 @@ async def get_section(section_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/sections")
+@app.post("/sections")
 async def create_section(
     project_id: int,
     section_name: str,
@@ -987,7 +1088,7 @@ async def create_section(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.put("/api/sections/{section_id}")
+@app.put("/sections/{section_id}")
 async def update_section(
     section_id: int,
     section_name: str,
@@ -1057,7 +1158,7 @@ async def update_section(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/api/sections/{section_id}")
+@app.delete("/sections/{section_id}")
 async def delete_section(section_id: int):
     """
     删除标段
@@ -1097,7 +1198,7 @@ async def delete_section(section_id: int):
 
 # ==================== 项目与标段匹配 API ====================
 
-@app.post("/api/match/project")
+@app.post("/match/project")
 async def match_project(project_name: str):
     """
     匹配项目名
@@ -1116,7 +1217,7 @@ async def match_project(project_name: str):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/match/section")
+@app.post("/match/section")
 async def match_section(project_id: int, section_code: str, section_name: str = None):
     """
     匹配标段
