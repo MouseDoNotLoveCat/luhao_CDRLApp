@@ -30,7 +30,7 @@
    - 测试计划
    - 迁移执行清单
 
-### 5. **IMPLEMENTATION_TIMELINE.md** ⏰ 时间表
+### 5. **IMPLEMENTATION_TIMELINE.md** ⏰ 时D间表
    - 总体时间表（5.5 小时）
    - 详细里程碑
    - 时间分配
