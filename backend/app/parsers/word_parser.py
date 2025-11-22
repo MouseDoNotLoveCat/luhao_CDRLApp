@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Word 文档解析模块
 用于解析监督通知书 Word 文档
@@ -496,7 +497,7 @@ class WordDocumentParser:
         inspection_unit = self._extract_inspection_unit_from_first_para()
         inspection_personnel = self._extract_inspection_personnel_from_first_para()
 
-        for para in self.paragraphs:
+        for i, para in enumerate(self.paragraphs):
             # 检查是否进入新章节
             section = self._identify_section(para)
             if section == 'rectification':
@@ -545,7 +546,7 @@ class WordDocumentParser:
                     current_responsible_unit = None
 
                 # 格式2：检查是否是黄百格式的数字编号行（如"1.中铁五局施工..."）
-                elif doc_format == 'format2' and re.match(r'^\d+\.', para):
+                elif doc_format == 'format2' and re.match(r'^\d+[\.．]', para):
                     # 检查是否是黄百格式的标段/工点行（包含"施工"、"监理"、"标"）
                     if '施工' in para and '监理' in para and '标' in para:
                         # 保存前一个问题
@@ -569,8 +570,13 @@ class WordDocumentParser:
                             }
                             issues.append(issue)
 
-                        # 从数字编号行提取信息
+                        # 从数字编号行提取信息（支持单行和跨行格式）
                         contractor, supervisor, section_code, site_name, check_date = self._extract_info_from_numbered_line(para)
+
+                        # 如果单行匹配失败，尝试跨行匹配
+                        if not section_code and i > 0:
+                            contractor, supervisor, section_code, site_name, check_date = self._extract_info_cross_line(self.paragraphs[i-1], para)
+
                         current_contractor = contractor
                         current_supervisor = supervisor
                         current_section_code = section_code
@@ -584,7 +590,8 @@ class WordDocumentParser:
                     else:
                         # 这可能是问题描述（黄百格式中，问题描述可能直接跟在工点行后面）
                         if current_site_name is not None:
-                            current_description = para.replace(r'^\d+\.', '').strip()
+                            # 去除开头的数字编号（支持半角/全角点）
+                            current_description = re.sub(r'^\d+[\.．]', '', para).strip()
                         else:
                             # 如果还没有工点信息，这可能是其他内容
                             pass
@@ -725,7 +732,7 @@ class WordDocumentParser:
                 if re.match(r'^（[一二三四五六七八九十]）', para):
                     return 'format1'
                 # 检查是否有数字编号（且包含标段信息）
-                elif re.match(r'^\d+\.', para) and ('标' in para or '施工' in para):
+                elif re.match(r'^\d+[\.．]', para) and ('标' in para or '施工' in para):
                     return 'format2'
                 # 如果找到了其他章节标记，停止检测
                 elif re.match(r'^[四五六七八九十]、', para):
@@ -735,9 +742,20 @@ class WordDocumentParser:
         return 'format1'
 
     def _extract_section_code(self, para: str) -> Optional[str]:
-        """提取标段编号，如 LWZF-2, LWXQ, LWZQ-8, HBZQ-1 等"""
-        # 匹配 LW 或 HB 开头，后跟字母和可选的数字
-        match = re.search(r'([LH]W[A-Z]+(?:-?\d+)?)', para)
+        """
+        提取标段编号，如 LWZF-2, LWXQ, LWZQ-8, HBZQ-1, QFSG1 等
+
+        支持的格式：
+        - HBZQ-1 (带连字符)
+        - QFSG1 (无连字符)
+        - LWZQ-8 (带连字符)
+        - HBZF (纯字母)
+
+        使用前瞻断言 (?=标) 确保只匹配"标"字之前的编号，避免误匹配其他大写字母组合
+        """
+        # 使用前瞻断言，匹配"标"字前的标段编号
+        # 模式：至少2个大写字母开头，后跟字母或数字，可选的连字符和数字
+        match = re.search(r'([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)', para)
         if match:
             return match.group(1)
         return None
@@ -751,14 +769,18 @@ class WordDocumentParser:
         return None
 
     def _extract_site_name(self, para: str) -> Optional[str]:
-        """提取工点名称"""
-        # 格式1（柳梧）：由中铁上海局施工、北京现代监理的LWZF-2标藤县北站（检查日期：
-        match = re.search(r'标(.+?)（检查日期', para)
-        if match:
-            return match.group(1)
+        """
+        提取工点名称
 
-        # 格式2（黄百）：由中铁上海局施工、北京现代监理的HBZQ-1标幼平隧道进口（检查时间：
-        match = re.search(r'标(.+?)（检查时间', para)
+        兼容多种时间标签格式：
+        - （检查时间：2025年...）
+        - （检查时间2025年...）
+        - （检查日期：2025年...）
+        - （检查日期2025年...）
+        支持全角括号
+        """
+        # 统一在“标”和“检查时间/日期”之间提取工点名称，允许可选冒号
+        match = re.search(r'标(.+?)（检查(?:时间|日期)[：:]?', para)
         if match:
             return match.group(1)
 
@@ -773,22 +795,58 @@ class WordDocumentParser:
 
         返回：(施工单位, 监理单位, 标段编号, 工点名称, 检查日期)
         """
-        # 正则表达式：支持全角和半角括号
-        # 先尝试全角括号
-        pattern = r'^\d+\.(.+?)施工、(.+?)监理的(.+?)标(.+?)（检查[时日]间?[：:]\s*(.+?)）'
+        # 正则表达式：支持全角/半角编号点、顿号/逗号分隔、可选冒号、通用标段编号
+        # 模式1：常规形式（监理的 后面跟 “编号标 + 工点名”）- 全角括号
+        pattern = r'^\d+[\.．、]\s*(.+?)施工[、，]\s*(.+?)监理的([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)标(.+?)（检查(?:时间|日期)[：:]?\s*(.+?)）'
         match = re.search(pattern, para)
 
-        # 如果没有匹配，尝试半角括号
+        # 模式2：常规形式（半角括号）
         if not match:
-            pattern = r'^\d+\.(.+?)施工、(.+?)监理的(.+?)标(.+?)\(检查[时日]间?[：:]\s*(.+?)\)'
+            pattern = r'^\d+[\.．、]\s*(.+?)施工[、，]\s*(.+?)监理的([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)标(.+?)\(检查(?:时间|日期)[：:]?\s*(.+?)\)'
             match = re.search(pattern, para)
 
+        # 模式3：承包/监理单位自带标段编号，后面无“编号标”再出现（全角括号）
+        # 例如：1.中铁五局YCZQ-4标施工、中铁路安YCJL-2标监理的DK262+...段路基工程（检查时间：2025年7月23日）
+        if not match:
+            pattern = r'^\d+[\.．]\s*(.+?)([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)标施工[、，]\s*(.+?)([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)标监理的(.+?)（检查(?:时间|日期)[：:]?\s*(.+?)）'
+            match = re.search(pattern, para)
+            if match:
+                contractor = match.group(1).strip()
+                section_code = match.group(2).strip()  # 优先使用施工单位的标段编号
+                supervisor = match.group(3).strip()
+                site_name = match.group(5).strip()
+                check_date_str = match.group(6).strip()
+                # 解析检查日期
+                check_date = None
+                date_match = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', check_date_str)
+                if date_match:
+                    year, month, day = date_match.groups()
+                    check_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                return contractor, supervisor, section_code, site_name, check_date
+
+        # 模式4：同模式3的半角括号版本
+        if not match:
+            pattern = r'^\d+[\.．]\s*(.+?)([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)标施工[、，]\s*(.+?)([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)标监理的(.+?)\(检查(?:时间|日期)[：:]?\s*(.+?)\)'
+            match = re.search(pattern, para)
+            if match:
+                contractor = match.group(1).strip()
+                section_code = match.group(2).strip()
+                supervisor = match.group(3).strip()
+                site_name = match.group(5).strip()
+                check_date_str = match.group(6).strip()
+                check_date = None
+                date_match = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', check_date_str)
+                if date_match:
+                    year, month, day = date_match.groups()
+                    check_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                return contractor, supervisor, section_code, site_name, check_date
+
         if match:
-            contractor = match.group(1)
-            supervisor = match.group(2)
-            section_code = match.group(3)
-            site_name = match.group(4)
-            check_date_str = match.group(5)
+            contractor = match.group(1).strip()
+            supervisor = match.group(2).strip()
+            section_code = match.group(3).strip()
+            site_name = match.group(4).strip()
+            check_date_str = match.group(5).strip()
 
             # 解析检查日期
             check_date = None
@@ -797,6 +855,73 @@ class WordDocumentParser:
                 year, month, day = date_match.groups()
                 check_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
 
+            return contractor, supervisor, section_code, site_name, check_date
+
+        return None, None, None, None, None
+
+    def _extract_info_cross_line(self, para1: str, para2: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+        """
+        跨行提取信息，处理标段信息在一行、工点和检查时间在下一行的情况
+
+        格式示例：
+        第一行：（一）中铁五局施工、中铁路安监理的YCZQ-4标
+        第二行：1、路基DK262+635.41～DK263+079.5段（检查时间2025年7月23日）
+
+        返回：(施工单位, 监理单位, 标段编号, 工点名称, 检查日期)
+        """
+        # 从第一行提取标段信息
+        section_patterns = [
+            # 带"由"字版本：（一）由中建八局施工、甘肃铁科监理的LWZQ-8标
+            r'^（[一二三四五六七八九十]+）\s*由(.+?)施工[、，]\s*(.+?)监理的([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)标\s*$',
+            # 无"由"字版本：（一）中铁五局施工、中铁路安监理的YCZQ-4标
+            r'^（[一二三四五六七八九十]+）\s*(.+?)施工[、，]\s*(.+?)监理的([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?)(?=标)标\s*$'
+        ]
+
+        contractor = None
+        supervisor = None
+        section_code = None
+
+        for pattern in section_patterns:
+            match = re.search(pattern, para1)
+            if match:
+                if len(match.groups()) == 4:  # 带"由"字版本
+                    contractor = match.group(2).strip()
+                    supervisor = match.group(3).strip()
+                    section_code = match.group(4).strip()
+                else:  # 无"由"字版本
+                    contractor = match.group(1).strip()
+                    supervisor = match.group(2).strip()
+                    section_code = match.group(3).strip()
+                break
+
+        if not section_code:
+            return None, None, None, None, None
+
+        # 从第二行提取工点名称和检查时间
+        site_patterns = [
+            # 全角括号版本：1、路基DK262+635.41～DK263+079.5段（检查时间2025年7月23日）
+            r'^\d+[\.．、]\s*(.+?)（检查(?:时间|日期)[：:]?\s*(.+?)）',
+            # 半角括号版本
+            r'^\d+[\.．、]\s*(.+?)\(检查(?:时间|日期)[：:]?\s*(.+?)\)'
+        ]
+
+        site_name = None
+        check_date = None
+
+        for pattern in site_patterns:
+            match = re.search(pattern, para2)
+            if match:
+                site_name = match.group(1).strip()
+                check_date_str = match.group(2).strip()
+
+                # 解析检查日期
+                date_match = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', check_date_str)
+                if date_match:
+                    year, month, day = date_match.groups()
+                    check_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                break
+
+        if site_name and check_date:
             return contractor, supervisor, section_code, site_name, check_date
 
         return None, None, None, None, None
@@ -826,15 +951,28 @@ class WordDocumentParser:
         return None
 
     def _extract_contractor(self, para: str) -> Optional[str]:
-        """提取施工单位"""
+        """
+        提取施工单位
+
+        支持两类位置：
+        - 格式1/2（柳梧）：由XXX施工、YYY监理的...
+        - 格式3（黄百数字行）：1.XXX施工、/1．XXX施工，YYY监理的...
+        """
+        # 优先匹配“由XXX施工”形式
         match = re.search(r'由(.+?)施工', para)
         if match:
             return match.group(1)
+
+        # 兼容数字编号行开头：1.XXX施工 或 1．XXX施工
+        match = re.search(r'^\d+[\.．]\s*([^、，]+?)施工', para)
+        if match:
+            return match.group(1)
+
         return None
 
     def _extract_supervisor(self, para: str) -> Optional[str]:
-        """提取监理单位"""
-        match = re.search(r'、(.+?)监理', para)
+        """提取监理单位（支持顿号、逗号两种分隔符）"""
+        match = re.search(r'[、，]([^、，]+?)监理', para)
         if match:
             return match.group(1)
         return None
@@ -958,6 +1096,12 @@ class WordDocumentParser:
                             '监督意见' in para):
                 break
 
+            # 如果尚未显式进入“其它问题”章节，但遇到一级标段行（（一）...施工、...监理的），则进入该章节
+            if not in_other and re.match(r'^（[一二三四五六七八九十]）', para) and '施工' in para and '监理' in para:
+                in_other = True
+                # 进入下一轮循环，在 in_other 分支中处理该段落
+                continue
+
             # 如果在其它问题章节
             if in_other:
                 # 检查段落是否有Word自动编号
@@ -987,12 +1131,30 @@ class WordDocumentParser:
                     # 重置问题列表标记
                     in_problem_list = False
 
-                # 检查是否是数字项（以数字.或数字、开头，如"1.工点名称"、"1、工点名称"或"1.问题描述"）
-                elif re.match(r'^\d+[\.、]', para):
+                # 检查是否是数字项（以数字.、或全角点开头，如"1.工点名称"、"1、工点名称"或"1．问题描述"）
+                elif re.match(r'^\d+[\.、．]', para):
+                    # 尝试跨行组合：上一行是标段行，本行是工点+检查时间
+                    if idx > 0:
+                        contractor2, supervisor2, section_code2, site_name2, check_date2 = self._extract_info_cross_line(self.paragraphs[idx-1], para)
+                        if section_code2:
+                            current_contractor = contractor2
+                            current_supervisor = supervisor2
+                            current_section_code = section_code2
+                            current_site_name = site_name2
+                            current_inspection_date = check_date2
+                            current_section_name = f"{section_code2}标"
+                            # 跨行已解析完成，进入下一条继续
+                            continue
+
                     # 格式3（黄百）：检查是否是黄百格式的数字编号行（包含标段和工点信息）
                     if doc_format == 'format2' and ('施工' in para and '监理' in para and '标' in para):
-                        # 从数字编号行提取信息
+                        # 从数字编号行提取信息（支持单行和跨行格式）
                         contractor, supervisor, section_code, site_name, check_date = self._extract_info_from_numbered_line(para)
+
+                        # 如果单行匹配失败，尝试跨行匹配
+                        if not section_code and idx > 0:
+                            contractor, supervisor, section_code, site_name, check_date = self._extract_info_cross_line(self.paragraphs[idx-1], para)
+
                         current_contractor = contractor
                         current_supervisor = supervisor
                         current_section_code = section_code
@@ -1001,7 +1163,7 @@ class WordDocumentParser:
                         current_section_name = f"{section_code}标" if section_code else None
                     else:
                         # 格式1/2（柳梧）：提取内容
-                        match = re.search(r'^\d+[\.、](.+)$', para)
+                        match = re.search(r'^\d+[\.、．](.+)$', para)
                         if match:
                             content = match.group(1).strip()
 
