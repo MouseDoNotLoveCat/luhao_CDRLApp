@@ -44,6 +44,19 @@
 
           <!-- 基本信息 -->
           <el-table-column prop="section_name" label="标段" width="100" />
+
+          <!-- 新增：施工单位/监理单位（在标段之后、检查工点之前） -->
+          <el-table-column prop="contractor" label="施工单位" width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.contractor || '未知施工单位' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="supervisor" label="监理单位" width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.supervisor || '未知监理单位' }}
+            </template>
+          </el-table-column>
+
           <el-table-column prop="site_name" label="工点" width="100" />
           <el-table-column prop="description" label="问题描述" min-width="150" show-overflow-tooltip />
 

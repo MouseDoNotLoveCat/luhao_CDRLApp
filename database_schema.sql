@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS issues (
   -- 工点信息
   site_name VARCHAR(200),  -- 工点名称（如"藤县北站"、"紫荆瑶山隧道出口"等）
 
+  -- 新增：施工与监理单位信息
+  contractor VARCHAR(200),  -- 施工单位
+  supervisor VARCHAR(200),  -- 监理单位
+
+
   -- 问题分类（三层结构）
   issue_category VARCHAR(50),  -- 问题类别一级（工程质量/施工安全/管理行为/其它）
   issue_type_level1 VARCHAR(100),  -- 问题类别二级分类（混凝土工程、隧道施工等）
@@ -166,10 +171,10 @@ CREATE TABLE IF NOT EXISTS issue_images (
 -- 索引
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_supervision_notices_check_date 
+CREATE INDEX IF NOT EXISTS idx_supervision_notices_check_date
   ON supervision_notices(check_date);
 
-CREATE INDEX IF NOT EXISTS idx_supervision_notices_check_unit 
+CREATE INDEX IF NOT EXISTS idx_supervision_notices_check_unit
   ON supervision_notices(check_unit);
 
 CREATE INDEX IF NOT EXISTS idx_projects_project_name
@@ -190,10 +195,10 @@ CREATE INDEX IF NOT EXISTS idx_issues_section_id
 CREATE INDEX IF NOT EXISTS idx_issues_site_name
   ON issues(site_name);
 
-CREATE INDEX IF NOT EXISTS idx_issues_issue_category 
+CREATE INDEX IF NOT EXISTS idx_issues_issue_category
   ON issues(issue_category);
 
-CREATE INDEX IF NOT EXISTS idx_issues_severity 
+CREATE INDEX IF NOT EXISTS idx_issues_severity
   ON issues(severity);
 
 CREATE INDEX IF NOT EXISTS idx_issues_inspection_date
@@ -226,13 +231,13 @@ CREATE INDEX IF NOT EXISTS idx_issues_document_source
 CREATE INDEX IF NOT EXISTS idx_issue_penalties_issue_id
   ON issue_penalties(issue_id);
 
-CREATE INDEX IF NOT EXISTS idx_responsibility_units_issue_id 
+CREATE INDEX IF NOT EXISTS idx_responsibility_units_issue_id
   ON responsibility_units(issue_id);
 
-CREATE INDEX IF NOT EXISTS idx_responsibility_units_unit_type 
+CREATE INDEX IF NOT EXISTS idx_responsibility_units_unit_type
   ON responsibility_units(unit_type);
 
-CREATE INDEX IF NOT EXISTS idx_issue_images_issue_id 
+CREATE INDEX IF NOT EXISTS idx_issue_images_issue_id
   ON issue_images(issue_id);
 
 -- ============================================================================
@@ -261,7 +266,7 @@ CREATE INDEX IF NOT EXISTS idx_issue_images_issue_id
 
 -- 隐患统计视图
 CREATE VIEW IF NOT EXISTS v_issues_summary AS
-SELECT 
+SELECT
   s.notice_number,
   s.check_date,
   s.check_unit,

@@ -52,6 +52,31 @@
         </template>
       </el-table-column>
 
+
+      <!-- 施工单位（可编辑） -->
+      <el-table-column label="施工单位" width="150">
+        <template #default="{ row, $index }">
+          <el-input
+            :model-value="row.contractor"
+            @change="(val) => updateIssue($index, 'contractor', val)"
+            placeholder="输入施工单位"
+            size="small"
+          />
+        </template>
+      </el-table-column>
+
+      <!-- 监理单位（可编辑） -->
+      <el-table-column label="监理单位" width="150">
+        <template #default="{ row, $index }">
+          <el-input
+            :model-value="row.supervisor"
+            @change="(val) => updateIssue($index, 'supervisor', val)"
+            placeholder="输入监理单位"
+            size="small"
+          />
+        </template>
+      </el-table-column>
+
       <!-- 工点名称（可编辑） -->
       <el-table-column label="工点" width="120">
         <template #default="{ row, $index }">

@@ -62,6 +62,9 @@ class WordDocumentParser:
                 'document_structure': self.document_structure  # 添加结构信息到结果中
             }
 
+            # 统一为每条问题补全施工/监理单位（基于标段编号映射与上下文回填）
+            self._postprocess_fill_units(result)
+
             result['total_issues'] = len(result['rectification_notices']) + len(result['other_issues'])
 
             # 验证问题总数
@@ -84,7 +87,7 @@ class WordDocumentParser:
                 'status': 'error',
                 'error': str(e)
             }
-    
+
     def _extract_paragraphs(self):
         """提取所有段落"""
         # 保存段落对象和文本，以便后续可以访问段落的格式属性（如Word自动编号）
@@ -132,7 +135,7 @@ class WordDocumentParser:
     def _extract_notice_number(self) -> Optional[str]:
         """
         提取通知书编号
-        
+
         格式示例：
         - 南宁站〔2025〕（通知）玉岑08号
         - 南宁站[2025]（通知）柳梧10号
@@ -144,38 +147,38 @@ class WordDocumentParser:
             r'宁建监\d{4}-\d+',
             r'编号[：:]\s*(\S+)',
         ]
-        
+
         for para in self.paragraphs[:20]:  # 只查看前 20 段
             for pattern in patterns:
                 match = re.search(pattern, para)
                 if match:
                     return match.group(0)
-        
+
         return None
-    
+
     def _extract_check_date(self) -> Optional[str]:
         """
         提取检查日期
-        
+
         格式示例：2025-08-07, 2025年8月7日
         """
         date_patterns = [
             r'(\d{4})[年-](\d{1,2})[月-](\d{1,2})[日]?',
         ]
-        
+
         for para in self.paragraphs[:30]:
             for pattern in date_patterns:
                 match = re.search(pattern, para)
                 if match:
                     year, month, day = match.groups()
                     return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-        
+
         return None
-    
+
     def _extract_check_unit(self) -> Optional[str]:
         """
         提取检查单位
-        
+
         通常在"检查单位"或"监督单位"之后
         """
         for i, para in enumerate(self.paragraphs[:20]):
@@ -188,9 +191,9 @@ class WordDocumentParser:
                     parts = re.split('[：:]', para)
                     if len(parts) > 1:
                         return parts[1].strip()
-        
+
         return None
-    
+
     def _extract_check_personnel(self) -> Optional[str]:
         """
         提取检查人员
@@ -435,7 +438,7 @@ class WordDocumentParser:
                         return project_name
 
         return None
-    
+
     def _identify_section(self, para: str) -> Optional[str]:
         """
         识别段落所属的章节
@@ -458,7 +461,7 @@ class WordDocumentParser:
             return None
 
         return None
-    
+
     def _extract_rectification_notices(self) -> List[Dict]:
         """
         提取下发整改通知单的问题
@@ -638,6 +641,7 @@ class WordDocumentParser:
                             }
                             issues.append(issue)
                     else:
+
                         # 普通整改通知单：每个工点只创建一个问题，无论有多少份通知单
                         if current_description:
                             issue = {
@@ -672,6 +676,28 @@ class WordDocumentParser:
                         current_description = para
 
         # 添加最后一个问题
+        if current_description:
+            issue = {
+                'section_code': current_section_code,
+                'section_name': current_section_name,
+                'site_name': current_site_name,
+                'contractor': current_contractor,
+                'supervisor': current_supervisor,
+                'inspection_unit': inspection_unit,
+                'inspection_personnel': inspection_personnel,
+                'inspection_date': current_inspection_date,
+                'description': current_description,
+                'rectification_requirements': current_requirements,
+                'rectification_deadline': current_deadline,
+                'responsible_unit': current_responsible_unit,
+                'is_rectification_notice': True,
+                'is_bad_behavior_notice': '不良行为' in (current_requirements or ''),
+                'document_section': 'rectification'
+            }
+            issues.append(issue)
+
+
+        # 循环结束后，保存最后一个正在处理的问题
         if current_description:
             issue = {
                 'section_code': current_section_code,
@@ -735,8 +761,10 @@ class WordDocumentParser:
                 elif re.match(r'^\d+[\.．]', para) and ('标' in para or '施工' in para):
                     return 'format2'
                 # 如果找到了其他章节标记，停止检测
+
                 elif re.match(r'^[四五六七八九十]、', para):
                     break
+
 
         # 默认返回 format1
         return 'format1'
@@ -976,7 +1004,7 @@ class WordDocumentParser:
         if match:
             return match.group(1)
         return None
-    
+
     def _extract_total_issues_count(self) -> Optional[Dict]:
         """
         提取文档中声明的问题总数
@@ -1199,12 +1227,16 @@ class WordDocumentParser:
                                 else:
                                     # 这是问题描述
                                     in_problem_list = True
+                                    # 强制从上下文回溯，确保获取到正确的单位
+                                    final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
+                                    final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+
                                     issue = {
                                         'section_code': current_section_code,
                                         'section_name': current_section_name,
                                         'site_name': current_site_name,
-                                        'contractor': current_contractor,
-                                        'supervisor': current_supervisor,
+                                        'contractor': final_contractor,
+                                        'supervisor': final_supervisor,
                                         'inspection_unit': inspection_unit,
                                         'inspection_personnel': inspection_personnel,
                                         'inspection_date': current_inspection_date,
@@ -1219,12 +1251,16 @@ class WordDocumentParser:
                                 # 规则：如果当前工点名称已经从一级编号中提取，则这是问题描述
                                 if current_site_name is not None:
                                     # 这是问题描述（格式2的情况）
+                                    # 强制从上下文回溯，确保获取到正确的单位
+                                    final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
+                                    final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+
                                     issue = {
                                         'section_code': current_section_code,
                                         'section_name': current_section_name,
                                         'site_name': current_site_name,
-                                        'contractor': current_contractor,
-                                        'supervisor': current_supervisor,
+                                        'contractor': final_contractor,
+                                        'supervisor': final_supervisor,
                                         'inspection_unit': inspection_unit,
                                         'inspection_personnel': inspection_personnel,
                                         'inspection_date': current_inspection_date,
@@ -1244,12 +1280,16 @@ class WordDocumentParser:
                             else:
                                 # 这是问题描述（没有工点名称的情况）
                                 # 创建问题记录
+                                # 强制从上下文回溯，确保获取到正确的单位
+                                final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
+                                final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+
                                 issue = {
                                     'section_code': current_section_code,
                                     'section_name': current_section_name,
                                     'site_name': current_site_name,
-                                    'contractor': current_contractor,
-                                    'supervisor': current_supervisor,
+                                    'contractor': final_contractor,
+                                    'supervisor': final_supervisor,
                                     'inspection_unit': inspection_unit,
                                     'inspection_personnel': inspection_personnel,
                                     'inspection_date': current_inspection_date,
@@ -1284,12 +1324,16 @@ class WordDocumentParser:
                         # 标记已经进入问题列表
                         in_problem_list = True
                         # 创建问题记录
+                        # 强制从上下文回溯，确保获取到正确的单位
+                        final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
+                        final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+
                         issue = {
                             'section_code': current_section_code,
                             'section_name': current_section_name,
                             'site_name': current_site_name,
-                            'contractor': current_contractor,
-                            'supervisor': current_supervisor,
+                            'contractor': final_contractor,
+                            'supervisor': final_supervisor,
                             'inspection_unit': inspection_unit,
                             'inspection_personnel': inspection_personnel,
                             'inspection_date': current_inspection_date,
@@ -1309,16 +1353,21 @@ class WordDocumentParser:
                       not ('（检查时间' in para or '（检查日期' in para) and
                       len(para) > 20):
                     # 这是一个无编号的问题描述
+                    # 强制从上下文回溯，确保获取到正确的单位
+                    final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
+                    final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+
                     issue = {
                         'section_code': current_section_code,
                         'section_name': current_section_name,
                         'site_name': current_site_name,
-                        'contractor': current_contractor,
-                        'supervisor': current_supervisor,
+                        'contractor': final_contractor,
+                        'supervisor': final_supervisor,
                         'inspection_unit': inspection_unit,
                         'inspection_personnel': inspection_personnel,
                         'inspection_date': current_inspection_date,
                         'description': para,
+
                         'is_rectification_notice': False,
                         'is_bad_behavior_notice': False,
                         'document_section': 'other'
@@ -1328,13 +1377,83 @@ class WordDocumentParser:
         return issues
 
 
+    # ===== 新增：问题列表施工/监理单位回填逻辑 =====
+    def _postprocess_fill_units(self, result: Dict) -> None:
+        """
+        对所有问题（整改通知单与其它问题）进行施工/监理单位的回填：
+        1) 基于 section_code 构建承包/监理单位映射
+        2) 对缺失 contractor/supervisor 的问题按映射回填
+        3) 若仍缺失，使用最近一次同标段的上下文值回填
+        """
+        rects = result.get('rectification_notices', []) or []
+        others = result.get('other_issues', []) or []
+        all_issues = rects + others
+
+        # 1) 收集映射：section_code -> {contractor, supervisor}
+        sec_map: Dict[str, Dict[str, str]] = {}
+        for issue in all_issues:
+            sc = issue.get('section_code')
+            if not sc:
+                continue
+            c = issue.get('contractor')
+            s = issue.get('supervisor')
+            if not c and not s:
+                continue
+            entry = sec_map.get(sc, {})
+            if c:
+                entry['contractor'] = c
+            if s:
+                entry['supervisor'] = s
+            sec_map[sc] = entry
+
+        # 2) 回填函数（就地修改）
+        def fill_list(lst: List[Dict]):
+            # 最近一次上下文（按遍历顺序记录该列表内见到的单位信息）
+            last_by_section: Dict[str, Dict[str, str]] = {}
+            for item in lst:
+                sc = item.get('section_code')
+                # 更新最近上下文
+                if sc:
+                    known = {}
+                    if item.get('contractor'):
+                        known['contractor'] = item['contractor']
+                    if item.get('supervisor'):
+                        known['supervisor'] = item['supervisor']
+                    if known:
+                        last_by_section[sc] = {**last_by_section.get(sc, {}), **known}
+
+                # 开始回填
+                if not item.get('contractor') or not item.get('supervisor'):
+                    # 先用全局映射（来自所有问题的汇总）
+                    if sc and sc in sec_map:
+                        entry = sec_map[sc]
+                        if not item.get('contractor') and entry.get('contractor'):
+                            item['contractor'] = entry['contractor']
+                        if not item.get('supervisor') and entry.get('supervisor'):
+                            item['supervisor'] = entry['supervisor']
+                    # 再用最近上下文（同列表内最近一次的单位信息）
+                    if sc and sc in last_by_section:
+                        entry2 = last_by_section[sc]
+                        if not item.get('contractor') and entry2.get('contractor'):
+                            item['contractor'] = entry2['contractor']
+                        if not item.get('supervisor') and entry2.get('supervisor'):
+                            item['supervisor'] = entry2['supervisor']
+                    # 仍缺失则设默认占位
+                    if not item.get('contractor'):
+                        item['contractor'] = '未知施工单位'
+                    if not item.get('supervisor'):
+                        item['supervisor'] = '未知监理单位'
+
+        fill_list(rects)
+        fill_list(others)
+
 def parse_word_document(file_path: str) -> Dict:
     """
     解析 Word 文档的便捷函数
-    
+
     Args:
         file_path: Word 文件路径
-    
+
     Returns:
         解析结果
     """

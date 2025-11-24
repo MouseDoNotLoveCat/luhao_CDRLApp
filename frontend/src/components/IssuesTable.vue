@@ -136,6 +136,25 @@
         </template>
       </el-table-column>
 
+      <!-- 施工单位 -->
+      <el-table-column prop="contractor" label="施工单位" width="160" show-overflow-tooltip>
+        <template #default="{ row }">
+          <div style="padding: 8px; min-height: 32px; display: flex; align-items: center;">
+            {{ row.contractor || '未知施工单位' }}
+          </div>
+        </template>
+      </el-table-column>
+
+      <!-- 监理单位 -->
+      <el-table-column prop="supervisor" label="监理单位" width="160" show-overflow-tooltip>
+        <template #default="{ row }">
+          <div style="padding: 8px; min-height: 32px; display: flex; align-items: center;">
+            {{ row.supervisor || '未知监理单位' }}
+          </div>
+        </template>
+      </el-table-column>
+
+
       <!-- 6. 检查工点 -->
       <el-table-column prop="site_name" label="检查工点" width="120">
         <template #default="{ row }">
@@ -551,6 +570,14 @@
 
         <el-form-item label="标段">
           <el-input v-model="editingIssue.section_name" disabled />
+        </el-form-item>
+
+        <!-- 新增：施工单位/监理单位（默认可编辑，初始值来自解析结果，空则显示占位） -->
+        <el-form-item label="施工单位">
+          <el-input v-model="editingIssue.contractor" placeholder="未知施工单位" />
+        </el-form-item>
+        <el-form-item label="监理单位">
+          <el-input v-model="editingIssue.supervisor" placeholder="未知监理单位" />
         </el-form-item>
 
         <el-form-item label="检查工点">

@@ -510,7 +510,8 @@ export const useImportStore = defineStore('import', () => {
 
       if (!result.success) {
         error.value = result.error
-        viewMode.value = 'preview-issues'
+        importResult.value = result // 将失败结果也存入 importResult
+        viewMode.value = 'result' // 统一导航到结果页
         return false
       }
 
@@ -520,7 +521,12 @@ export const useImportStore = defineStore('import', () => {
       return true
     } catch (err) {
       error.value = err.message || '导入失败'
-      viewMode.value = 'preview-issues'
+      // 将错误信息包装成与成功结果类似的结构
+      importResult.value = {
+        success: false,
+        error: error.value
+      }
+      viewMode.value = 'result' // 统一导航到结果页
       return false
     } finally {
       isLoading.value = false
