@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 工程隐患库管理应用 Constructor Defect & Risk Library App (CDRL)
 
 一个基于 Python FastAPI + Vue.js 构建的本地 Web 应用，采用 NLP 预训练轻量模型进行智能信息提取，支持监督通知书自动识别、数据管理、统计分析和 Excel 导出功能。
@@ -771,3 +772,7 @@ MIT License
 
 **关键点**：现在的架构设计完全支持未来的云扩展，无需重构
 
+=======
+# luhao_CDRLApp
+监督检查问题库管理
+>>>>>>> 9bcd3a4ac1ca02f83600cdcf54ddaa18a7ddba2b
