@@ -93,7 +93,11 @@
 
           <!-- 检查信息 -->
           <el-table-column prop="inspection_unit" label="检查单位" width="120" show-overflow-tooltip />
-          <el-table-column prop="inspection_date" label="检查日期" width="100" />
+          <el-table-column prop="inspection_date" label="检查时间" width="120">
+            <template #default="{ row }">
+              {{ formatDate(row.inspection_date) }}
+            </template>
+          </el-table-column>
           <el-table-column prop="inspection_personnel" label="检查人员" width="100" show-overflow-tooltip />
 
           <!-- 整改信息 -->
@@ -179,6 +183,18 @@ const handleConfirm = async () => {
   if (success) {
     // 导入成功，viewMode 已经改为 'result'
   }
+}
+
+// 格式化日期显示：将 YYYY-MM-DD 转换为 YYYY年M月D日
+const formatDate = (dateStr) => {
+  if (!dateStr) return '-'
+  // 如果是 YYYY-MM-DD 格式，转换为 YYYY年M月D日
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match) {
+    const [, year, month, day] = match
+    return `${year}年${parseInt(month)}月${parseInt(day)}日`
+  }
+  return dateStr
 }
 </script>
 

@@ -103,3 +103,6 @@ ENV/
 # yarn.lock
 # poetry.lock
 
+# Sample files (Word documents for testing)
+Samples/
+samples/

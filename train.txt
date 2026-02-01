@@ -1,0 +1,9 @@
+{"content": "隧道左线K12+300处发现二衬开裂。", "result_list": [], "prompt": "质量问题"}
+{"content": "施工现场工人未佩戴安全帽。", "result_list": [], "prompt": "安全问题"}
+{"content": "消火栓水压报警系统失灵。", "result_list": [], "prompt": "安全问题"}
+{"content": "项目部安全穿透式管理不到位。", "result_list": [], "prompt": "管理问题"}
+{"content": "桥梁墩身混凝土表面出现蜂窝麻面。", "result_list": [], "prompt": "质量问题"}
+{"content": "深基坑开挖未按规定设置临边防护栏杆。", "result_list": [], "prompt": "安全问题"}
+{"content": "现场施工日志记录不完整，签字手续缺失。", "result_list": [], "prompt": "管理问题"}
+{"content": "预制梁场张拉记录数据异常，涉嫌造假。", "result_list": [], "prompt": "质量问题"}
+{"content": "临时用电电缆直接拖地，未架空处理。", "result_list": [], "prompt": "安全问题"}

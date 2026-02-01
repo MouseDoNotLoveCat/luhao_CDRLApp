@@ -670,8 +670,11 @@ class WordDocumentParser:
                     current_responsible_unit = None
 
                 # 黄百格式：如果当前有工点信息但没有问题描述，且这不是特殊段落，则作为问题描述
+                # 注意：需要排除图片标注行（如"图1"、"图1                               图2"等）
                 elif doc_format == 'format2' and current_site_name is not None and current_description is None:
-                    if not para.startswith('处理措施：') and not para.startswith('检查情况：'):
+                    if (not para.startswith('处理措施：') and
+                        not para.startswith('检查情况：') and
+                        not re.match(r'^图\d+', para.strip())):
                         # 这是问题描述
                         current_description = para
 
@@ -789,9 +792,17 @@ class WordDocumentParser:
         return None
 
     def _extract_section_name(self, para: str) -> Optional[str]:
-        """提取标段名称（包含标段编号和"标"字）"""
-        # 格式：LWZF-2标
-        match = re.search(r'(LW[A-Z]+(?:-?\d+)?标)', para)
+        """
+        提取标段名称（包含标段编号和"标"字）
+
+        支持的格式：
+        - LWZF-2标
+        - YCZQ-3标
+        - HBZQ-1标
+        - 等所有标段格式
+        """
+        # 使用通用模式：至少2个大写字母开头，后跟字母或数字，可选的连字符和数字，然后是"标"字
+        match = re.search(r'([A-Z]{2,}[A-Z0-9]*(?:-?\d+)?标)', para)
         if match:
             return match.group(1)
         return None
@@ -813,6 +824,60 @@ class WordDocumentParser:
             return match.group(1)
 
         return None
+
+    def _clean_site_name_and_extract_date(self, site_name: str, current_date: Optional[str] = None) -> Tuple[str, Optional[str]]:
+        """
+        清理工点名称中的检查时间部分，并提取检查时间
+
+        兼容两种格式：
+        1. 检查时间在标段后面（原有格式）：工点名称不包含检查时间
+        2. 检查时间在工点名称后面（新格式）：工点名称包含检查时间，需要分离
+
+        Args:
+            site_name: 原始工点名称（可能包含检查时间）
+            current_date: 当前已提取的检查时间（如果有）
+
+        Returns:
+            (清理后的工点名称, 检查时间)
+        """
+        if not site_name:
+            return site_name, current_date
+
+        # 检查是否包含检查时间/日期
+        # 支持格式：（检查时间：2026年1月21日）、（检查时间2026年1月21日）、(检查日期：...)等
+        match = re.search(r'[（(]检查(?:时间|日期)[：:]?\s*(\d{4})年(\d{1,2})月(\d{1,2})日[）)]?', site_name)
+
+        if match:
+            # 提取检查时间
+            year, month, day = match.groups()
+            extracted_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+            # 清理工点名称：去掉检查时间部分
+            clean_name = re.sub(r'[（(]检查(?:时间|日期)[：:]?\s*\d{4}年\d{1,2}月\d{1,2}日[）)]?', '', site_name).strip()
+
+            # 如果当前没有检查时间，使用提取的时间；否则保留原有时间
+            final_date = current_date if current_date else extracted_date
+
+            return clean_name, final_date
+
+        # 不包含检查时间，返回原始值
+        return site_name, current_date
+
+    def _clean_site_name(self, site_name: str) -> str:
+        """
+        清理工点名称，去除检查时间部分
+
+        例如：
+        - "大车山中桥无砟轨道工程（检查时间2026年1月21日）" -> "大车山中桥无砟轨道工程"
+        - "双贵顶隧道出口（检查时间：2026年1月21日）" -> "双贵顶隧道出口"
+        """
+        if not site_name:
+            return site_name
+
+        # 去除检查时间/日期部分（支持全角和半角括号，支持有无冒号）
+        # 模式：（检查时间：2026年1月21日） 或 (检查时间2026年1月21日)
+        cleaned = re.sub(r'[（(]检查(?:时间|日期)[：:]?[^）)]*[）)]?$', '', site_name)
+        return cleaned.strip()
 
     def _extract_info_from_numbered_line(self, para: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
         """
@@ -1204,12 +1269,14 @@ class WordDocumentParser:
 
                             # 首先检查是否是管理类工点名称（优先级最高）
                             if content in management_keywords or content.endswith('管理方面'):
-                                # 这是管理类工点名称
+                                # 这是管理类工点名称（不需要清理检查时间）
                                 current_site_name = content
                             # 检查是否是新的工点名称（包含"（检查时间"或"（检查日期"）
                             elif '（检查时间' in content or '（检查日期' in content:
-                                # 这是新的工点名称
-                                current_site_name = content
+                                # 这是新的工点名称，需要分离工点名称和检查时间
+                                current_site_name, current_inspection_date = self._clean_site_name_and_extract_date(
+                                    content, current_inspection_date
+                                )
                             # 根据文档结构类型判断
                             elif self.document_structure == 'three_level':
                                 # 三级结构：数字编号行可能是工点编号或问题编号
@@ -1222,8 +1289,10 @@ class WordDocumentParser:
                                 has_problem_keyword = any(keyword in content for keyword in problem_keywords)
 
                                 if len(content) < 30 and not has_problem_keyword:
-                                    # 这是工点名称
-                                    current_site_name = content
+                                    # 这是工点名称，清理可能包含的检查时间
+                                    current_site_name, current_inspection_date = self._clean_site_name_and_extract_date(
+                                        content, current_inspection_date
+                                    )
                                 else:
                                     # 这是问题描述
                                     in_problem_list = True
@@ -1271,12 +1340,16 @@ class WordDocumentParser:
                                     }
                                     issues.append(issue)
                                 else:
-                                    # 这是工点名称（还没有提取到工点名称）
-                                    current_site_name = content
+                                    # 这是工点名称（还没有提取到工点名称），清理可能包含的检查时间
+                                    current_site_name, current_inspection_date = self._clean_site_name_and_extract_date(
+                                        content, current_inspection_date
+                                    )
                             elif not re.match(r'^（[0-9０-９]）', content) and not re.match(r'^[⑴-⑽]', content):
-                                # 这是工点名称（格式1的情况）
+                                # 这是工点名称（格式1的情况），清理可能包含的检查时间
                                 # 规则：不以问题编号开头（（1）、⑴等）
-                                current_site_name = content
+                                current_site_name, current_inspection_date = self._clean_site_name_and_extract_date(
+                                    content, current_inspection_date
+                                )
                             else:
                                 # 这是问题描述（没有工点名称的情况）
                                 # 创建问题记录
@@ -1346,11 +1419,13 @@ class WordDocumentParser:
 
                 # 启发式规则：识别无编号的问题
                 # 如果一行既没有文本编号，也没有Word编号，但在工点名称之后，且长度足够长，则认为它是问题描述
+                # 注意：需要排除图片标注行（如"图1"、"图1                               图2"等）
                 elif (current_site_name is not None and
                       not re.match(r'^（[一二三四五六七八九十]）', para) and
                       not re.match(r'^\d+[\.、]', para) and
                       not re.match(r'^[（(⑴-⑽]', para) and
                       not ('（检查时间' in para or '（检查日期' in para) and
+                      not re.match(r'^图\d+', para.strip()) and
                       len(para) > 20):
                     # 这是一个无编号的问题描述
                     # 强制从上下文回溯，确保获取到正确的单位

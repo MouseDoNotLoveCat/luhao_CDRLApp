@@ -45,6 +45,11 @@
         <el-table-column prop="description" label="问题描述" min-width="200" show-overflow-tooltip />
         <el-table-column prop="site_name" label="工点" width="100" />
         <el-table-column prop="section_name" label="标段" width="100" />
+        <el-table-column prop="inspection_date" label="检查时间" width="120">
+          <template #default="{ row }">
+            {{ formatDate(row.inspection_date) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="document_section" label="来源" width="100">
           <template #default="{ row }">
             <el-tag :type="row.document_section === 'rectification' ? 'success' : 'info'">
@@ -141,6 +146,18 @@ const handleTableSelectionChange = (selection) => {
       selectedIssueIds.value.add(rowIndex)
     }
   })
+}
+
+// 格式化日期显示：将 YYYY-MM-DD 转换为 YYYY年M月D日
+const formatDate = (dateStr) => {
+  if (!dateStr) return '-'
+  // 如果是 YYYY-MM-DD 格式，转换为 YYYY年M月D日
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match) {
+    const [, year, month, day] = match
+    return `${year}年${parseInt(month)}月${parseInt(day)}日`
+  }
+  return dateStr
 }
 </script>
 
