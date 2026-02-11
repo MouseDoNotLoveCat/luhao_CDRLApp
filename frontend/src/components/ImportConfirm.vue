@@ -35,6 +35,13 @@
         </el-alert>
       </div>
 
+      <!-- 项目-标段关联确认 -->
+      <ProjectSectionMapping
+        v-if="Object.keys(sectionProjectMapping).length > 0"
+        :section-project-mapping="sectionProjectMapping"
+        @update="handleSectionProjectUpdate"
+      />
+
       <!-- 选中问题列表 -->
       <div class="selected-issues">
         <h4>选中的问题列表（共 {{ selectedIssues.length }} 个）</h4>
@@ -45,7 +52,14 @@
           <!-- 基本信息 -->
           <el-table-column prop="section_name" label="标段" width="100" />
 
-          <!-- 新增：施工单位/监理单位（在标段之后、检查工点之前） -->
+          <!-- 新增：项目名称列 -->
+          <el-table-column label="项目名称" width="150" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ getProjectName(row.section_name) }}
+            </template>
+          </el-table-column>
+
+          <!-- 施工单位/监理单位（只读显示） -->
           <el-table-column prop="contractor" label="施工单位" width="160" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.contractor || '未知施工单位' }}
@@ -91,7 +105,7 @@
             </template>
           </el-table-column>
 
-          <!-- 检查信息 -->
+          <!-- 检查信息（只读显示） -->
           <el-table-column prop="inspection_unit" label="检查单位" width="120" show-overflow-tooltip />
           <el-table-column prop="inspection_date" label="检查时间" width="120">
             <template #default="{ row }">
@@ -100,11 +114,11 @@
           </el-table-column>
           <el-table-column prop="inspection_personnel" label="检查人员" width="100" show-overflow-tooltip />
 
-          <!-- 整改信息 -->
+          <!-- 整改信息（只读显示） -->
           <el-table-column prop="rectification_requirements" label="整改要求" min-width="150" show-overflow-tooltip />
           <el-table-column prop="rectification_deadline" label="整改期限" width="100" />
 
-          <!-- 责任信息 -->
+          <!-- 责任信息（只读显示） -->
           <el-table-column prop="responsible_unit" label="责任单位" width="120" show-overflow-tooltip />
           <el-table-column prop="responsible_person" label="责任人" width="100" />
         </el-table>
@@ -123,8 +137,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useImportStore } from '@/stores/importStore'
+import ProjectSectionMapping from './ProjectSectionMapping.vue'
 
 const importStore = useImportStore()
 
@@ -145,6 +160,27 @@ const selectedIssues = computed(() => {
 })
 
 const isLoading = computed(() => importStore.isLoading)
+
+const sectionProjectMapping = computed(() => importStore.sectionProjectMapping)
+
+// 初始化项目-标段映射
+onMounted(() => {
+  if (Object.keys(sectionProjectMapping.value).length === 0) {
+    importStore.initializeSectionProjectMapping()
+  }
+})
+
+// 根据标段名称获取项目名称
+const getProjectName = (sectionName) => {
+  if (!sectionName) return '-'
+  const projectInfo = sectionProjectMapping.value[sectionName]
+  return projectInfo?.project_name || '未知项目'
+}
+
+// 更新标段的项目关联
+const handleSectionProjectUpdate = (sectionName, projectInfo) => {
+  importStore.updateSectionProject(sectionName, projectInfo)
+}
 
 // 获取严重程度的标签
 const getSeverityLabel = (severity) => {

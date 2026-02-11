@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/haolu/Library/CloudStorage/OneDrive-个人/工程监督/AppDev/CDRLApp/diagnose_hezhan_detailed.py", line 8, in <module>
+    from app.parsers.word_parser import WordParser
+ImportError: cannot import name 'WordParser' from 'app.parsers.word_parser' (/Users/haolu/Library/CloudStorage/OneDrive-个人/工程监督/AppDev/CDRLApp/backend/app/parsers/word_parser.py)

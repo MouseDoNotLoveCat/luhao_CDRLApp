@@ -34,8 +34,8 @@
       <el-table-column label="标段" width="150">
         <template #default="{ row, $index }">
           <el-select
-            :model-value="row.section_name"
-            @change="(val) => updateIssue($index, 'section_name', val)"
+            v-model="row.section_name"
+            @change="updateIssue($index, 'section_name', row.section_name)"
             filterable
             allow-create
             default-first-option
@@ -57,8 +57,8 @@
       <el-table-column label="施工单位" width="150">
         <template #default="{ row, $index }">
           <el-input
-            :model-value="row.contractor"
-            @change="(val) => updateIssue($index, 'contractor', val)"
+            v-model="row.contractor"
+            @input="updateIssue($index, 'contractor', row.contractor)"
             placeholder="输入施工单位"
             size="small"
           />
@@ -69,8 +69,8 @@
       <el-table-column label="监理单位" width="150">
         <template #default="{ row, $index }">
           <el-input
-            :model-value="row.supervisor"
-            @change="(val) => updateIssue($index, 'supervisor', val)"
+            v-model="row.supervisor"
+            @input="updateIssue($index, 'supervisor', row.supervisor)"
             placeholder="输入监理单位"
             size="small"
           />
@@ -81,8 +81,8 @@
       <el-table-column label="工点" width="120">
         <template #default="{ row, $index }">
           <el-input
-            :model-value="row.site_name"
-            @change="(val) => updateIssue($index, 'site_name', val)"
+            v-model="row.site_name"
+            @input="updateIssue($index, 'site_name', row.site_name)"
             placeholder="输入工点名称"
             size="small"
           />
@@ -102,8 +102,8 @@
       <el-table-column label="问题描述" width="200">
         <template #default="{ row, $index }">
           <el-input
-            :model-value="row.description"
-            @change="(val) => updateIssue($index, 'description', val)"
+            v-model="row.description"
+            @input="updateIssue($index, 'description', row.description)"
             type="textarea"
             :rows="2"
             placeholder="输入问题描述"
@@ -117,8 +117,8 @@
         <template #default="{ row, $index }">
           <div style="display: flex; flex-direction: column; gap: 8px">
             <el-select
-              :model-value="row.issue_category"
-              @change="(val) => handleCategoryChange($index, val)"
+              v-model="row.issue_category"
+              @change="handleCategoryChange($index, row.issue_category)"
               placeholder="一级分类"
               size="small"
               style="width: 100%"
@@ -131,8 +131,8 @@
               />
             </el-select>
             <el-select
-              :model-value="row.issue_type_level1"
-              @change="(val) => handleLevel1Change($index, val)"
+              v-model="row.issue_type_level1"
+              @change="handleLevel1Change($index, row.issue_type_level1)"
               :disabled="!row.issue_category"
               placeholder="二级分类"
               size="small"
@@ -146,8 +146,8 @@
               />
             </el-select>
             <el-select
-              :model-value="row.issue_type_level2"
-              @change="(val) => updateIssue($index, 'issue_type_level2', val)"
+              v-model="row.issue_type_level2"
+              @change="updateIssue($index, 'issue_type_level2', row.issue_type_level2)"
               :disabled="!row.issue_type_level1"
               placeholder="三级分类"
               size="small"
@@ -168,8 +168,8 @@
       <el-table-column label="严重程度" width="120">
         <template #default="{ row, $index }">
           <el-select
-            :model-value="row.severity"
-            @change="(val) => updateIssue($index, 'severity', val)"
+            v-model="row.severity"
+            @change="updateIssue($index, 'severity', row.severity)"
             placeholder="选择严重程度"
             size="small"
             style="width: 100%"
@@ -180,6 +180,80 @@
             <el-option label="4 - 严重" :value="4" />
             <el-option label="5 - 极严重" :value="5" />
           </el-select>
+        </template>
+      </el-table-column>
+
+      <!-- 检查单位（可编辑） -->
+      <el-table-column label="检查单位" width="150">
+        <template #default="{ row, $index }">
+          <el-input
+            v-model="row.inspection_unit"
+            @input="updateIssue($index, 'inspection_unit', row.inspection_unit)"
+            placeholder="输入检查单位"
+            size="small"
+          />
+        </template>
+      </el-table-column>
+
+      <!-- 检查人员（可编辑） -->
+      <el-table-column label="检查人员" width="120">
+        <template #default="{ row, $index }">
+          <el-input
+            v-model="row.inspection_personnel"
+            @input="updateIssue($index, 'inspection_personnel', row.inspection_personnel)"
+            placeholder="输入检查人员"
+            size="small"
+          />
+        </template>
+      </el-table-column>
+
+      <!-- 整改要求（可编辑） -->
+      <el-table-column label="整改要求" width="200">
+        <template #default="{ row, $index }">
+          <el-input
+            v-model="row.rectification_requirements"
+            @input="updateIssue($index, 'rectification_requirements', row.rectification_requirements)"
+            type="textarea"
+            :rows="2"
+            placeholder="输入整改要求"
+            size="small"
+          />
+        </template>
+      </el-table-column>
+
+      <!-- 整改期限（可编辑） -->
+      <el-table-column label="整改期限" width="120">
+        <template #default="{ row, $index }">
+          <el-input
+            v-model="row.rectification_deadline"
+            @input="updateIssue($index, 'rectification_deadline', row.rectification_deadline)"
+            placeholder="输入整改期限"
+            size="small"
+          />
+        </template>
+      </el-table-column>
+
+      <!-- 责任单位（可编辑） -->
+      <el-table-column label="责任单位" width="150">
+        <template #default="{ row, $index }">
+          <el-input
+            v-model="row.responsible_unit"
+            @input="updateIssue($index, 'responsible_unit', row.responsible_unit)"
+            placeholder="输入责任单位"
+            size="small"
+          />
+        </template>
+      </el-table-column>
+
+      <!-- 责任人（可编辑） -->
+      <el-table-column label="责任人" width="120">
+        <template #default="{ row, $index }">
+          <el-input
+            v-model="row.responsible_person"
+            @input="updateIssue($index, 'responsible_person', row.responsible_person)"
+            placeholder="输入责任人"
+            size="small"
+          />
         </template>
       </el-table-column>
     </el-table>

@@ -555,7 +555,7 @@ class ImportService:
         导入选中的问题
 
         Args:
-            notice_data: 通知书数据（来自识别结果）
+            notice_data: 通知书数据（来自识别结果），包含 sectionProjectMapping
             selected_issue_ids: 选中的问题 ID 列表
 
         Returns:
@@ -566,6 +566,10 @@ class ImportService:
             logger.info(f"   选中的问题 ID 列表: {selected_issue_ids}")
             logger.info(f"   选中的问题数量: {len(selected_issue_ids)}")
             logger.info(f"   通知书中的总问题数: {len(notice_data.get('issues', []))}")
+
+            # 获取项目-标段映射
+            section_project_mapping = notice_data.get('sectionProjectMapping', {})
+            logger.info(f"   项目-标段映射: {section_project_mapping}")
 
             # 确保 selected_issue_ids 是整数列表，以防前端数据类型错误
             logger.info(f"🔍 [DEBUG] 原始 selected_issue_ids: {selected_issue_ids}")
@@ -605,18 +609,65 @@ class ImportService:
                     'error': '通知书插入失败'
                 }
 
-            # 3. 插入项目
-            project_result = self._insert_project_from_data(cursor, notice_data)
-            logger.info(f"🔍 [DEBUG] 项目插入结果: {project_result}")
-            if not project_result:
-                conn.close()
-                return {
-                    'success': False,
-                    'error': '项目插入失败'
-                }
+            # 3. 处理项目和标段映射
+            # 为每个标段创建或获取项目，并创建标段记录
+            section_id_mapping = {}  # { section_name: section_id }
 
-            project_id = project_result['id']
-            logger.info(f"🔍 [DEBUG] project_id: {project_id}")
+            for section_name, project_info in section_project_mapping.items():
+                logger.info(f"\n🔍 处理标段: {section_name}")
+                logger.info(f"   项目信息: {project_info}")
+
+                # 3.1 创建或获取项目
+                project_id = None
+                if project_info.get('project_id'):
+                    # 使用现有项目（用户在前端选择了现有项目）
+                    project_id = project_info['project_id']
+                    logger.info(f"   使用现有项目 ID: {project_id}")
+                else:
+                    # 需要创建新项目或查找现有项目
+                    project_name = project_info.get('project_name', '未知项目')
+                    builder_unit = project_info.get('builder_unit', '')
+
+                    # 先检查项目名称是否已存在
+                    cursor.execute(
+                        "SELECT id FROM projects WHERE project_name = ?",
+                        (project_name,)
+                    )
+                    existing_project = cursor.fetchone()
+
+                    if existing_project:
+                        # 项目已存在，使用现有项目
+                        project_id = existing_project[0]
+                        logger.info(f"   项目已存在，使用现有项目 ID: {project_id}, 名称: {project_name}")
+                    else:
+                        # 项目不存在，创建新项目
+                        cursor.execute(
+                            "INSERT INTO projects (project_name, builder_unit) VALUES (?, ?)",
+                            (project_name, builder_unit)
+                        )
+                        project_id = cursor.lastrowid
+                        logger.info(f"   创建新项目 ID: {project_id}, 名称: {project_name}")
+
+                # 3.2 检查标段是否已存在
+                cursor.execute(
+                    "SELECT id FROM sections WHERE section_name = ? AND project_id = ?",
+                    (section_name, project_id)
+                )
+                existing_section = cursor.fetchone()
+
+                if existing_section:
+                    section_id = existing_section[0]
+                    logger.info(f"   使用现有标段 ID: {section_id}")
+                else:
+                    # 创建新标段
+                    cursor.execute(
+                        "INSERT INTO sections (project_id, section_name) VALUES (?, ?)",
+                        (project_id, section_name)
+                    )
+                    section_id = cursor.lastrowid
+                    logger.info(f"   创建新标段 ID: {section_id}")
+
+                section_id_mapping[section_name] = section_id
 
             # 4. 导入选中的问题
             imported_issues = []
@@ -637,7 +688,14 @@ class ImportService:
                 if idx in selected_issue_ids:
                     logger.info(f"   ✓ 导入问题 {idx}: {issue_data.get('description', '')[:50]}...")
                     try:
-                        issue_id = self._insert_issue(cursor, notice_id, issue_data, project_id)
+                        # 从映射中获取 section_id
+                        section_name = issue_data.get('section_name')
+                        if section_name and section_name in section_id_mapping:
+                            issue_data['section_id'] = section_id_mapping[section_name]
+                            logger.info(f"   设置 section_id: {issue_data['section_id']}")
+
+                        # 注意：这里不再需要 project_id 参数，因为已经通过 section_id 关联
+                        issue_id = self._insert_issue(cursor, notice_id, issue_data, None)
                         logger.info(f"🔍 [DEBUG] _insert_issue 返回值: {issue_id}")
                         if issue_id:
                             imported_issues.append({

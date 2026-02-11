@@ -608,6 +608,11 @@ class WordDocumentParser:
                     measures = para.replace('处理措施：', '').strip()
                     current_requirements = measures
 
+                    # 添加调试日志
+                    print(f"[DEBUG] 遇到'处理措施：'段落")
+                    print(f"[DEBUG]   current_section_code: {current_section_code}")
+                    print(f"[DEBUG]   current_description: {current_description[:50] if current_description else None}...")
+
                     # 从处理措施中提取整改期限
                     deadline = self._extract_deadline_from_measures(measures)
                     if deadline:
@@ -622,6 +627,7 @@ class WordDocumentParser:
                     if '不良行为' in measures:
                         # 这是一个不良行为通知单，需要创建问题
                         if current_description:
+                            print(f"[DEBUG]   → 创建问题（不良行为通知单）")
                             issue = {
                                 'section_code': current_section_code,
                                 'section_name': current_section_name,
@@ -640,10 +646,12 @@ class WordDocumentParser:
                                 'document_section': 'rectification'
                             }
                             issues.append(issue)
+                            print(f"[DEBUG]   → 问题已添加，当前总数: {len(issues)}")
                     else:
 
                         # 普通整改通知单：每个工点只创建一个问题，无论有多少份通知单
                         if current_description:
+                            print(f"[DEBUG]   → 创建问题（普通整改通知单）")
                             issue = {
                                 'section_code': current_section_code,
                                 'section_name': current_section_name,
@@ -662,6 +670,7 @@ class WordDocumentParser:
                                 'document_section': 'rectification'
                             }
                             issues.append(issue)
+                            print(f"[DEBUG]   → 问题已添加，当前总数: {len(issues)}")
 
                     # 重置
                     current_description = None
@@ -678,29 +687,7 @@ class WordDocumentParser:
                         # 这是问题描述
                         current_description = para
 
-        # 添加最后一个问题
-        if current_description:
-            issue = {
-                'section_code': current_section_code,
-                'section_name': current_section_name,
-                'site_name': current_site_name,
-                'contractor': current_contractor,
-                'supervisor': current_supervisor,
-                'inspection_unit': inspection_unit,
-                'inspection_personnel': inspection_personnel,
-                'inspection_date': current_inspection_date,
-                'description': current_description,
-                'rectification_requirements': current_requirements,
-                'rectification_deadline': current_deadline,
-                'responsible_unit': current_responsible_unit,
-                'is_rectification_notice': True,
-                'is_bad_behavior_notice': '不良行为' in (current_requirements or ''),
-                'document_section': 'rectification'
-            }
-            issues.append(issue)
-
-
-        # 循环结束后，保存最后一个正在处理的问题
+        # 循环结束后，添加最后一个问题（如果还没有被添加）
         if current_description:
             issue = {
                 'section_code': current_section_code,
@@ -1047,19 +1034,42 @@ class WordDocumentParser:
         """
         提取施工单位
 
-        支持两类位置：
-        - 格式1/2（柳梧）：由XXX施工、YYY监理的...
-        - 格式3（黄百数字行）：1.XXX施工、/1．XXX施工，YYY监理的...
+        支持多种格式：
+        - 格式1：由XXX施工、YYY监理的...
+        - 格式2：1.XXX施工、/1．XXX施工，YYY监理的...（阿拉伯数字序号）
+        - 格式3：（一）XXX施工、YYY监理的...（中文序号）
+        - 格式4：施工单位：XXX
+        - 格式5：XXX施工、YYY监理的...（直接以施工单位开头）
         """
         # 优先匹配“由XXX施工”形式
         match = re.search(r'由(.+?)施工', para)
         if match:
-            return match.group(1)
+            return match.group(1).strip()
 
         # 兼容数字编号行开头：1.XXX施工 或 1．XXX施工
         match = re.search(r'^\d+[\.．]\s*([^、，]+?)施工', para)
         if match:
-            return match.group(1)
+            return match.group(1).strip()
+
+        # 新增：支持中文序号开头：（一）XXX施工、YYY监理
+        # 匹配 （一）、（二）、（三）等格式，支持全角和半角括号
+        match = re.search(r'^[（(][一二三四五六七八九十百]+[）)]\s*([^、，]+?)施工', para)
+        if match:
+            return match.group(1).strip()
+
+        # 匹配"施工单位：XXX"格式
+        match = re.search(r'施工单位[：:]\s*(.+?)(?:[，、；;]|$)', para)
+        if match:
+            return match.group(1).strip()
+
+        # 匹配直接以施工单位开头的格式：XXX施工、YYY监理
+        # 但要排除以数字、括号等开头的情况
+        match = re.search(r'^([^0-9（）\(\)一二三四五六七八九十]+?)施工[、，]', para)
+        if match:
+            contractor = match.group(1).strip()
+            # 排除过短的匹配（可能是误匹配）
+            if len(contractor) >= 3:
+                return contractor
 
         return None
 
@@ -1296,9 +1306,10 @@ class WordDocumentParser:
                                 else:
                                     # 这是问题描述
                                     in_problem_list = True
-                                    # 强制从上下文回溯，确保获取到正确的单位
-                                    final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
-                                    final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+                                    # 使用上下文中的单位信息，不从问题描述段落中提取
+                                    # 避免将问题描述中的"施工"、"监理"等词误识别为单位名称
+                                    final_contractor = current_contractor
+                                    final_supervisor = current_supervisor
 
                                     issue = {
                                         'section_code': current_section_code,
@@ -1316,34 +1327,12 @@ class WordDocumentParser:
                                     }
                                     issues.append(issue)
                             elif self.document_structure == 'two_level':
-                                # 二级结构：数字编号行是问题编号行
-                                # 规则：如果当前工点名称已经从一级编号中提取，则这是问题描述
-                                if current_site_name is not None:
-                                    # 这是问题描述（格式2的情况）
-                                    # 强制从上下文回溯，确保获取到正确的单位
-                                    final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
-                                    final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
-
-                                    issue = {
-                                        'section_code': current_section_code,
-                                        'section_name': current_section_name,
-                                        'site_name': current_site_name,
-                                        'contractor': final_contractor,
-                                        'supervisor': final_supervisor,
-                                        'inspection_unit': inspection_unit,
-                                        'inspection_personnel': inspection_personnel,
-                                        'inspection_date': current_inspection_date,
-                                        'description': content,
-                                        'is_rectification_notice': False,
-                                        'is_bad_behavior_notice': False,
-                                        'document_section': 'other'
-                                    }
-                                    issues.append(issue)
-                                else:
-                                    # 这是工点名称（还没有提取到工点名称），清理可能包含的检查时间
-                                    current_site_name, current_inspection_date = self._clean_site_name_and_extract_date(
-                                        content, current_inspection_date
-                                    )
+                                # 二级结构：数字编号行应该是工点名称，不是问题描述
+                                # 修复：在二级结构中，数字编号行（1. 2. 3.）始终是工点名称
+                                # 问题描述使用三级编号（（1）（2）（3））
+                                current_site_name, current_inspection_date = self._clean_site_name_and_extract_date(
+                                    content, current_inspection_date
+                                )
                             elif not re.match(r'^（[0-9０-９]）', content) and not re.match(r'^[⑴-⑽]', content):
                                 # 这是工点名称（格式1的情况），清理可能包含的检查时间
                                 # 规则：不以问题编号开头（（1）、⑴等）
@@ -1353,9 +1342,10 @@ class WordDocumentParser:
                             else:
                                 # 这是问题描述（没有工点名称的情况）
                                 # 创建问题记录
-                                # 强制从上下文回溯，确保获取到正确的单位
-                                final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
-                                final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+                                # 使用上下文中的单位信息，不从问题描述段落中提取
+                                # 避免将问题描述中的"施工"、"监理"等词误识别为单位名称
+                                final_contractor = current_contractor
+                                final_supervisor = current_supervisor
 
                                 issue = {
                                     'section_code': current_section_code,
@@ -1397,9 +1387,10 @@ class WordDocumentParser:
                         # 标记已经进入问题列表
                         in_problem_list = True
                         # 创建问题记录
-                        # 强制从上下文回溯，确保获取到正确的单位
-                        final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
-                        final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+                        # 使用上下文中的单位信息，不从问题描述段落中提取
+                        # 避免将问题描述中的"施工"、"监理"等词误识别为单位名称
+                        final_contractor = current_contractor
+                        final_supervisor = current_supervisor
 
                         issue = {
                             'section_code': current_section_code,
@@ -1420,17 +1411,21 @@ class WordDocumentParser:
                 # 启发式规则：识别无编号的问题
                 # 如果一行既没有文本编号，也没有Word编号，但在工点名称之后，且长度足够长，则认为它是问题描述
                 # 注意：需要排除图片标注行（如"图1"、"图1                               图2"等）
+                # 注意：需要排除"检查情况："和"处理措施："段落（这些属于下发整改通知单章节）
                 elif (current_site_name is not None and
                       not re.match(r'^（[一二三四五六七八九十]）', para) and
                       not re.match(r'^\d+[\.、]', para) and
                       not re.match(r'^[（(⑴-⑽]', para) and
                       not ('（检查时间' in para or '（检查日期' in para) and
                       not re.match(r'^图\d+', para.strip()) and
+                      not para.startswith('检查情况：') and
+                      not para.startswith('处理措施：') and
                       len(para) > 20):
                     # 这是一个无编号的问题描述
-                    # 强制从上下文回溯，确保获取到正确的单位
-                    final_contractor = self._extract_contractor(para) or (self._extract_contractor(self.paragraphs[idx-1]) if idx > 0 else None) or current_contractor
-                    final_supervisor = self._extract_supervisor(para) or (self._extract_supervisor(self.paragraphs[idx-1]) if idx > 0 else None) or current_supervisor
+                    # 使用上下文中的单位信息，不从问题描述段落中提取
+                    # 避免将问题描述中的"施工"、"监理"等词误识别为单位名称
+                    final_contractor = current_contractor
+                    final_supervisor = current_supervisor
 
                     issue = {
                         'section_code': current_section_code,

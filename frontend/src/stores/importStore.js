@@ -42,6 +42,9 @@ export const useImportStore = defineStore('import', () => {
   const importStep = ref(1)  // 导入步骤
   const importProgress = ref(0)  // 导入进度 (0-100)
 
+  // 新增：项目-标段映射状态
+  const sectionProjectMapping = ref({})  // { section_name: { project_id, project_name, builder_unit } }
+
   // 计算属性
   const hasFile = computed(() => selectedFile.value !== null)
   const fileName = computed(() => selectedFile.value?.name || '')
@@ -448,6 +451,31 @@ export const useImportStore = defineStore('import', () => {
     }
   }
 
+  // 新增：更新标段的项目关联
+  const updateSectionProject = (sectionName, projectInfo) => {
+    sectionProjectMapping.value[sectionName] = projectInfo
+  }
+
+  // 新增：批量初始化标段-项目映射（从识别结果中提取）
+  const initializeSectionProjectMapping = () => {
+    const mapping = {}
+    const projectName = recognizedNotices.value[0]?.project_name || '未知项目'
+
+    // 遍历所有识别的问题，提取唯一的标段名称
+    recognizedIssues.value.forEach(issue => {
+      const sectionName = issue.section_name
+      if (sectionName && !mapping[sectionName]) {
+        mapping[sectionName] = {
+          project_id: null,  // 初始为 null，需要用户确认
+          project_name: projectName,
+          builder_unit: recognizedNotices.value[0]?.builder_unit || ''
+        }
+      }
+    })
+
+    sectionProjectMapping.value = mapping
+  }
+
   // 新增：根据项目名称获取标段列表
   const fetchSectionsByProject = async (projectName) => {
     try {
@@ -503,7 +531,8 @@ export const useImportStore = defineStore('import', () => {
       // 更新 noticeData 中的 issues 为选中的问题
       const updatedNoticeData = {
         ...noticeData,
-        issues: selectedIssues
+        issues: selectedIssues,
+        sectionProjectMapping: sectionProjectMapping.value  // 添加项目-标段映射
       }
 
       const result = await importService.importSelected(updatedNoticeData, Array.from(selectedIssueIds.value))
@@ -545,6 +574,7 @@ export const useImportStore = defineStore('import', () => {
     modifiedRecords.value = new Set()
     importStep.value = 1
     importProgress.value = 0
+    sectionProjectMapping.value = {}  // 重置项目-标段映射
     viewMode.value = 'upload'
   }
 
@@ -578,6 +608,7 @@ export const useImportStore = defineStore('import', () => {
     modifiedRecords,
     importStep,
     importProgress,
+    sectionProjectMapping,
 
     // 计算属性
     hasFile,
@@ -618,7 +649,9 @@ export const useImportStore = defineStore('import', () => {
     validateRecord,
     validateAllRecords,
     importSelected,
-    resetRecognition
+    resetRecognition,
+    updateSectionProject,
+    initializeSectionProjectMapping
   }
 })
 
