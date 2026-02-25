@@ -273,7 +273,9 @@ async def get_issues(
                    i.responsible_unit, i.responsible_person,
                    i.is_bad_behavior_notice,
                    s.section_name, p.project_name,
-                   sn.check_date as notice_check_date, sn.check_unit as notice_check_unit
+                   sn.check_date as notice_check_date, sn.check_unit as notice_check_unit,
+                   COALESCE(i.contractor, s.contractor_unit) as contractor,
+                   COALESCE(i.supervisor, s.supervisor_unit) as supervisor
             FROM issues i
             LEFT JOIN sections s ON i.section_id = s.id
             LEFT JOIN projects p ON s.project_id = p.id
