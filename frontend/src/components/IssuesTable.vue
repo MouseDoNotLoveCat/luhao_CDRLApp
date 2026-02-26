@@ -38,6 +38,14 @@
           :value="category"
         />
       </el-select>
+
+      <el-button
+        type="success"
+        style="margin-left: 12px"
+        @click="openExportDialog"
+      >
+        导出 Excel
+      </el-button>
     </div>
 
     <!-- 表格 -->
@@ -705,12 +713,51 @@
         <el-button type="primary" @click="saveEditedIssue">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 导出 Excel 对话框 -->
+    <el-dialog
+      v-model="exportDialogVisible"
+      title="导出 Excel 表格"
+      width="520px"
+    >
+      <div style="margin-bottom: 12px; color: #606266; font-size: 13px;">
+        当前筛选结果共 <strong>{{ allFilteredIssues.length }}</strong> 条记录，请选择要导出的字段：
+      </div>
+
+      <el-checkbox
+        v-model="exportSelectAll"
+        :indeterminate="exportIndeterminate"
+        @change="handleExportSelectAll"
+        style="margin-bottom: 8px; font-weight: 600;"
+      >全选</el-checkbox>
+
+      <el-divider style="margin: 8px 0;" />
+
+      <el-checkbox-group v-model="exportSelectedFields" style="display: flex; flex-wrap: wrap; gap: 8px 0;">
+        <el-checkbox
+          v-for="field in exportFieldOptions"
+          :key="field.key"
+          :value="field.key"
+          style="width: 50%; margin-right: 0;"
+        >{{ field.label }}</el-checkbox>
+      </el-checkbox-group>
+
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :disabled="exportSelectedFields.length === 0"
+          @click="doExport"
+        >导出</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import * as XLSX from 'xlsx'
 import { getSecondaryCategories, getTertiaryCategories } from '../config/issueCategories'
 
 const props = defineProps({
@@ -802,6 +849,89 @@ const getSeverityType = (severity) => {
     '轻微': 'info'
   }
   return typeMap[severity] || 'info'
+}
+
+// ── 导出 Excel ────────────────────────────────────────────────────────────
+const exportFieldOptions = [
+  { key: 'inspection_date',      label: '检查时间' },
+  { key: 'inspection_unit',      label: '检查单位' },
+  { key: 'project_name',         label: '检查项目' },
+  { key: 'section_name',         label: '标段' },
+  { key: 'contractor',           label: '施工单位' },
+  { key: 'supervisor',           label: '监理单位' },
+  { key: 'site_name',            label: '工点名称' },
+  { key: 'description',          label: '问题描述' },
+  { key: 'issue_category',       label: '一级分类' },
+  { key: 'issue_type_level1',    label: '二级分类' },
+  { key: 'issue_type_level2',    label: '三级分类' },
+  { key: 'severity',             label: '严重程度' },
+  { key: 'rectification_deadline', label: '整改期限' },
+  { key: 'is_rectification',     label: '是否下发整改通知单' },
+]
+
+const exportDialogVisible = ref(false)
+const exportSelectedFields = ref(exportFieldOptions.map(f => f.key))
+
+const exportSelectAll = computed({
+  get: () => exportSelectedFields.value.length === exportFieldOptions.length,
+  set: () => {}
+})
+const exportIndeterminate = computed(() =>
+  exportSelectedFields.value.length > 0 &&
+  exportSelectedFields.value.length < exportFieldOptions.length
+)
+
+const handleExportSelectAll = (val) => {
+  exportSelectedFields.value = val ? exportFieldOptions.map(f => f.key) : []
+}
+
+const openExportDialog = () => {
+  // 每次打开时重置为全选
+  exportSelectedFields.value = exportFieldOptions.map(f => f.key)
+  exportDialogVisible.value = true
+}
+
+const doExport = () => {
+  const data = allFilteredIssues.value
+  if (!data.length) {
+    ElMessage.warning('当前筛选结果为空，无数据可导出')
+    return
+  }
+
+  // 构建表头（按 exportFieldOptions 顺序，只保留选中字段）
+  const selectedOptions = exportFieldOptions.filter(f => exportSelectedFields.value.includes(f.key))
+  const header = selectedOptions.map(f => f.label)
+
+  // 构建数据行
+  const rows = data.map(issue =>
+    selectedOptions.map(f => {
+      const val = issue[f.key]
+      if (f.key === 'is_rectification') return val ? '是' : '否'
+      return val ?? ''
+    })
+  )
+
+  // 生成工作表
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+
+  // 设置列宽（根据字段类型给合理默认宽度）
+  const colWidths = selectedOptions.map(f => {
+    if (f.key === 'description') return { wch: 60 }
+    if (['contractor', 'supervisor', 'inspection_unit'].includes(f.key)) return { wch: 20 }
+    return { wch: 16 }
+  })
+  ws['!cols'] = colWidths
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '问题记录')
+
+  // 生成文件名（含当前日期）
+  const today = new Date().toISOString().slice(0, 10)
+  const fileName = `问题记录_${today}.xlsx`
+
+  XLSX.writeFile(wb, fileName)
+  exportDialogVisible.value = false
+  ElMessage.success(`已导出 ${data.length} 条记录`)
 }
 
 const toggleEditMode = () => {

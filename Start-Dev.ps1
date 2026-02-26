@@ -82,11 +82,9 @@ if (-not (Test-Path "frontend")) {
 
 Set-Location "frontend"
 
-# Check dependencies
-if (-not (Test-Path "node_modules")) {
-    Write-Host "[INSTALL] Installing frontend dependencies..." -ForegroundColor Yellow
-    npm install --legacy-peer-deps
-}
+# 安装/更新前端依赖（确保 package.json 中的所有依赖都已安装）
+Write-Host "[INSTALL] Installing frontend dependencies..." -ForegroundColor Yellow
+npm install --legacy-peer-deps
 
 # Return to root directory
 Set-Location $ROOT_DIR

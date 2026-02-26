@@ -49,7 +49,7 @@ class WordDocumentParser:
                 'inspection_unit': self._extract_inspection_unit_from_first_para(),
                 'inspection_personnel': self._extract_inspection_personnel_from_first_para(),
                 'inspection_basis': self._extract_inspection_basis(),
-                'project_name': self._extract_project_name_from_first_para(),
+                'project_name': self._extract_project_name_from_first_para() or self._extract_project_name(),
                 'check_unit': self._extract_check_unit() or '未知单位',
                 'check_personnel': self._extract_check_personnel(),
                 'project_name_old': self._extract_project_name(),
@@ -106,28 +106,39 @@ class WordDocumentParser:
         1. 找到第一个标段行（以（一）、（二）等开头，包含"施工"和"监理"）
         2. 检查该标段行中是否包含具体工点名称（如桥梁名、隧道名、站场名等）
         3. 根据是否包含工点名称来判断结构类型
+        4. 若文档使用数字序号（1. 2. 3.）而非中文序号，同样检测其标段行
         """
         # 工点名称的特征词汇（用于识别具体工点名称）
         site_name_keywords = [
             '桥', '隧道', '站', '路基', '基坑', '挡墙', '边坡', '排水', '防护',
             '梁', '墩', '拱', '涵', '通道', '通路', '斜井', '竖井', '出口', '入口',
             '接触网', '信号', '通信', '电力', '给水', '污水', '雨水', '燃气',
-            '大桥', '特大桥', '中桥', '小桥', '高架', '地下', '地面'
+            '大桥', '特大桥', '中桥', '小桥', '高架', '地下', '地面',
+            # 补充：实际文档中出现的工点类型
+            '普速场', '信号楼', '内业资料', '场坪', '站场', '货场', '机务段',
+            '动车所', '变电所', '综合楼', '办公楼', '宿舍楼', '食堂',
         ]
 
-        # 查找第一个标段行
+        # 查找第一个标段行（中文序号格式：（一）...施工...监理）
         for para in self.paragraphs:
-            # 检查是否是标段行（以（一）、（二）等开头，包含"施工"和"监理"）
             if re.match(r'^（[一二三四五六七八九十]）', para) and '施工' in para and '监理' in para:
-                # 检查标段行中是否包含工点名称关键词
+                # 检查标段行中是否包含工点名称关键词，或包含"标"后面跟着工点名称
                 has_site_name = any(keyword in para for keyword in site_name_keywords)
+                # 额外检测：标段编号后面是否还有内容（即工点名称）
+                # 格式：...的XXXX标[工点名称]（检查时间...）
+                if not has_site_name:
+                    has_site_name = bool(re.search(r'[A-Z]{2,}[A-Z0-9]*(?:-?\d+)?标.+（检查', para))
 
                 if has_site_name:
-                    # 标段行中包含工点名称 → 二级结构
                     return 'two_level'
                 else:
-                    # 标段行中不包含工点名称 → 三级结构
                     return 'three_level'
+
+        # 查找数字序号格式的标段行（1. 2. 3. 格式，包含施工和监理信息）
+        for para in self.paragraphs:
+            if re.match(r'^\d+[\.．]', para) and '施工' in para and '监理' in para and '标' in para:
+                # 数字序号格式的标段行，工点名称直接包含在行内 → 二级结构
+                return 'two_level'
 
         # 如果没有找到标段行，默认返回三级结构
         return 'three_level'
@@ -211,15 +222,55 @@ class WordDocumentParser:
 
     def _extract_project_name(self) -> Optional[str]:
         """
-        提取项目名称
+        提取项目名称（fallback 方法）
 
-        通常在文档开头或通知书编号附近
-        示例：柳梧铁路、黄百铁路等
+        通常在文档开头叙述段落或"总体情况"段落中
+        示例：合湛铁路、黄百铁路、钦州东至钦州港增建二线工程、钦防增建二线等
+
+        识别规则（优先级从高到低）：
+        1. 从叙述段落中匹配"对XXX工程/项目"格式（支持不含"铁路"的项目名）
+           适用于：钦港二线（"对钦州东至钦州港增建二线工程项目实施监督检查"）
+                   钦防二线（"对钦防增建二线项目开展了监督检查"）
+        2. 优先匹配"新建xxx铁路"格式（总体情况段落中常见）
+        3. 跳过含建设单位特征词的段落（"指挥部"、"有限责任公司"、"集团有限公司"等）
+        4. 最后才从普通段落中提取"xxx铁路"
         """
+        # 建设单位特征词，含这些词的段落不作为项目名称来源
+        _BUILDER_KEYWORDS = ('指挥部', '有限责任公司', '集团有限公司', '铁路局', '建设指挥')
+        # 标段编号模式（用于排除误匹配）
+        _SECTION_PAT = r'[A-Z]{2,}[A-Z0-9]*(?:-?\d+)?标'
+
+        # 第一轮：从叙述段落中匹配"对XXX工程/项目"格式
+        # 匹配规则：
+        #   - "对" 后跟项目名称（至少4个字，不含句号/逗号/空格）
+        #   - 项目名称以"工程"或"项目"结尾
+        #   - 后接动词（实施/开展/进行/开始）、数字（如"2个施工标段"）或标段编号
+        # 注意：不跳过含建设单位词的段落（[03]段可能同时含"集团有限公司"和项目名）
+        #       只跳过**以建设单位词结尾**的短段落（如"集团公司沿海铁路工程建设指挥部："）
+        for para in self.paragraphs[:10]:
+            # 跳过纯建设单位行（短段落且以指挥部/公司结尾）
+            if len(para) < 30 and any(para.rstrip('：:').endswith(kw) for kw in _BUILDER_KEYWORDS):
+                continue
+            match = re.search(
+                r'对([^，。；\s对]{4,30}(?:工程|项目))'
+                r'(?=\s*(?:实施|开展|进行|开始|\d|的\s*' + _SECTION_PAT + r'))',
+                para
+            )
+            if match:
+                return match.group(1).strip()
+
+        # 第二轮：优先匹配"新建xxx铁路"格式
         for para in self.paragraphs[:30]:
-            # 查找"铁路"关键词
             if '铁路' in para:
-                # 提取"xxx铁路"
+                match = re.search(r'新建([^，。；\s]+铁路)', para)
+                if match:
+                    return match.group(1)
+
+        # 第三轮：跳过建设单位段落，匹配普通"xxx铁路"
+        for para in self.paragraphs[:30]:
+            if '铁路' in para:
+                if any(kw in para for kw in _BUILDER_KEYWORDS):
+                    continue
                 match = re.search(r'(\S+铁路)', para)
                 if match:
                     return match.group(1)
@@ -407,35 +458,39 @@ class WordDocumentParser:
 
     def _extract_project_name_from_first_para(self) -> Optional[str]:
         """
-        从第一段话中提取项目名称
+        从第一段话中提取项目名称（主方法）
 
         句子结构：`南宁监督站****对【项目名称】****标****、****、****、****，****标*******、*******等工点`
 
         识别规则：
         1. 项目名称位于"对"之后
         2. 包含"铁路"两个字
-        3. 在标段编号（如"HBZQ-1标"、"LWZQ-8标"）之前
+        3. 在标段编号（如"HBZQ-1标"、"LWZQ-8标"）之前（允许中间有"工程"、"项目"等词）
         4. 支持"铁路广西段"这样的完整项目名称
+        5. 提取结果去掉开头可能误匹配的"对"字
 
         示例：
         - 南宁监督站蒋德义、卢浩对【柳梧铁路】LWZQ-8标...
         - 南宁监督站李规录、陈胜对【黄百铁路广西段】HBZQ-1标...
+        - ...对新建【合湛铁路】工程开展了监督检查。根据...抽查了HZZQ-1标...
         """
-        # 查找第一段话
+        # 标段编号正则：如 HBZQ-1标、LWZQ-8标、QFSG1标
+        _SECTION_PAT = r'[A-Z]{2}[A-Z]+(?:-?\d+)?标'
+
         for para in self.paragraphs[:10]:
-            # 查找"对"和"铁路"
-            if '对' in para and '铁路' in para:
-                # 提取"对"之后的内容
-                after_dui = para.split('对', 1)
-                if len(after_dui) > 1:
-                    content = after_dui[1]
-                    # 提取项目名称：从"对"之后到标段编号（如"HBZQ-1标"、"LWZQ-8标"）之前
-                    # 正则表达式：匹配"xxx铁路xxx"，但在标段编号前停止
-                    # 标段编号格式：[A-Z]{2}[A-Z]+(?:-?\d+)?标（如HBZQ-1标、LWZQ-8标）
-                    match = re.search(r'([^，。；\s]+铁路[^，。；\s]*?)(?=[A-Z]{2}[A-Z]+(?:-?\d+)?标)', content)
-                    if match:
-                        project_name = match.group(1).strip()
-                        return project_name
+            if '对' not in para or '铁路' not in para:
+                continue
+
+            # 在整段文字中搜索"xxx铁路[可选后缀]"，且其后（允许间隔任意非换行字符）出现标段编号
+            # 使用非贪婪匹配，取最短的铁路名称
+            match = re.search(
+                r'([^，。；\s对]+铁路(?:广西段|工程|项目)?)'   # 项目名称（不含"对"字）
+                r'(?=[^，。；]{0,30}' + _SECTION_PAT + r')',   # lookahead：30字内出现标段编号
+                para
+            )
+            if match:
+                project_name = match.group(1).strip().lstrip('对')
+                return project_name
 
         return None
 
@@ -453,8 +508,13 @@ class WordDocumentParser:
             return 'rectification'
         # 其它问题章节（第三章或第二章的"主要质量安全问题"）
         elif ('三、' in para or '其他主要' in para or '其它主要' in para or
-              ('二、' in para and ('主要质量安全问题' in para or '主要安全质量问题' in para))) and \
+              ('二、' in para and ('主要质量安全问题' in para or '主要安全质量问题' in para or
+                                   '主要质量安全等问题' in para or '主要安全质量等问题' in para or
+                                   '存在的主要' in para))) and \
              ('其他' in para or '其它' in para or '主要' in para or '问题' in para):
+            return 'other'
+        # 无章节编号的"存在的主要...问题"标题（如钦防二线格式）
+        elif re.match(r'^存在的主要', para) and '问题' in para:
             return 'other'
         # 监督意见/有关要求章节（第三/四章）- 这些章节标志着问题部分的结束
         elif '四、' in para or '三、' in para or '监督意见' in para or '监督有关' in para or '有关要求' in para:
@@ -683,7 +743,7 @@ class WordDocumentParser:
                 elif doc_format == 'format2' and current_site_name is not None and current_description is None:
                     if (not para.startswith('处理措施：') and
                         not para.startswith('检查情况：') and
-                        not re.match(r'^图\d+', para.strip())):
+                        not self._is_pic_caption(para)):
                         # 这是问题描述
                         current_description = para
 
@@ -1030,6 +1090,23 @@ class WordDocumentParser:
             return '设计单位'
         return None
 
+    @staticmethod
+    def _is_pic_caption(text: str) -> bool:
+        """
+        判断一个段落是否为纯图片标注行，应被排除在问题记录之外。
+
+        匹配规则：段落去除空白后，仅由"图N"（N为数字）和空白字符组成。
+        例如：
+          - "图1"                          → True
+          - "图2                           图3"  → True（多图并排，中间有大量空格）
+          - "图10"                         → True
+          - "存在质量隐患（图1、图2）"      → False（正常问题描述中引用图片）
+          - "图1施工现场"                   → False（图片说明文字，不是纯标注）
+        """
+        # 去掉所有空白后，检查是否只剩"图N图M..."这样的纯图片编号序列
+        collapsed = re.sub(r'\s+', '', text)
+        return bool(re.fullmatch(r'(?:图[0-9]+)+', collapsed))
+
     def _extract_contractor(self, para: str) -> Optional[str]:
         """
         提取施工单位
@@ -1205,6 +1282,12 @@ class WordDocumentParser:
                 # 进入下一轮循环，在 in_other 分支中处理该段落
                 continue
 
+            # 同上：数字序号格式的标段行（1. 2. 3. 格式，包含施工和监理信息）也触发进入
+            if not in_other and re.match(r'^\d+[\.．]', para) and '施工' in para and '监理' in para and '标' in para:
+                in_other = True
+                # 进入下一轮循环，在 in_other 分支中处理该段落
+                continue
+
             # 如果在其它问题章节
             if in_other:
                 # 检查段落是否有Word自动编号
@@ -1366,7 +1449,10 @@ class WordDocumentParser:
                 # 检查是否是具体问题（以（1）、（2）、⑴、⑵等开头，或有Word自动编号）
                 # 支持：（1）、(1)、（１）、(１)、（10）、(10)、⑴、⑵ 等格式，以及Word自动编号
                 # 但要排除工点名称行（包含"（检查时间"或"（检查日期"）
-                elif (re.match(r'^[（(⑴-⑽]', para) or has_word_numbering) and not ('（检查时间' in para or '（检查日期' in para):
+                # 同时排除图片标注行（Word自动编号有时也会应用于图片标注段落）
+                elif ((re.match(r'^[（(⑴-⑽]', para) or has_word_numbering)
+                      and not ('（检查时间' in para or '（检查日期' in para)
+                      and not self._is_pic_caption(para)):
                     # 提取问题编号和描述
                     # 支持：（1）、(1)、（１）、(１)、（10）、(10)、⑴、⑵ 等格式
                     # 先尝试括号格式
@@ -1417,7 +1503,7 @@ class WordDocumentParser:
                       not re.match(r'^\d+[\.、]', para) and
                       not re.match(r'^[（(⑴-⑽]', para) and
                       not ('（检查时间' in para or '（检查日期' in para) and
-                      not re.match(r'^图\d+', para.strip()) and
+                      not self._is_pic_caption(para) and
                       not para.startswith('检查情况：') and
                       not para.startswith('处理措施：') and
                       len(para) > 20):

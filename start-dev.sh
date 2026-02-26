@@ -101,11 +101,9 @@ echo ""
 
 cd "$SCRIPT_DIR/frontend"
 
-# 检查依赖
-if [ ! -d "node_modules" ]; then
-    echo "📦 安装前端依赖..."
-    npm install --legacy-peer-deps
-fi
+# 安装/更新前端依赖（确保 package.json 中的所有依赖都已安装）
+echo "📦 安装前端依赖..."
+npm install --legacy-peer-deps
 
 # 启动前端开发服务器
 npm run dev &
