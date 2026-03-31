@@ -47,6 +47,7 @@ dist/
 # Database
 *.sqlite
 *.sqlite3
+*.db.backup*
 
 # Temporary files
 *.tmp
@@ -106,3 +107,8 @@ ENV/
 # Sample files (Word documents for testing)
 Samples/
 samples/
+
+# Local data files
+*.xlsx
+*.eddx
+~$*
