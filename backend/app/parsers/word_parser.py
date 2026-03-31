@@ -659,9 +659,9 @@ class WordDocumentParser:
                             # 如果还没有工点信息，这可能是其他内容
                             pass
 
-                # 检查是否是"检查情况："段落
-                elif para.startswith('检查情况：'):
-                    current_description = para.replace('检查情况：', '').strip()
+                # 检查是否是"检查情况："或"存在问题："段落
+                elif para.startswith('检查情况：') or para.startswith('存在问题：'):
+                    current_description = re.sub(r'^(?:检查情况|存在问题)：', '', para).strip()
 
                 # 检查是否是"处理措施："段落
                 elif para.startswith('处理措施：'):

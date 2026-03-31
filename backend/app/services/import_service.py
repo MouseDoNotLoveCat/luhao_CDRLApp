@@ -358,10 +358,10 @@ class ImportService:
                     INSERT INTO issues
                     (issue_number, supervision_notice_id, section_id, section_name, site_name, contractor, supervisor, description,
                      is_rectification_notice, is_bad_behavior_notice, document_section, document_source,
-                     severity, issue_category, issue_type_level1, issue_type_level2, inspection_unit, inspection_date, inspection_personnel,
+                     severity, issue_category, issue_type_level1, issue_type_level2, inspection_unit, inspection_date,
                      rectification_requirements, rectification_deadline, responsible_unit, responsible_person,
                      created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     issue_number,
                     notice_id,
@@ -381,7 +381,6 @@ class ImportService:
                     issue.get('issue_type_level2'),  # 用户编辑的三级分类
                     issue.get('inspection_unit'),
                     issue.get('inspection_date'),
-                    issue.get('inspection_personnel'),
                     issue.get('rectification_requirements'),
                     issue.get('rectification_deadline'),
                     issue.get('responsible_unit'),
