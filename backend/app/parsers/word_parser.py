@@ -663,6 +663,12 @@ class WordDocumentParser:
                 elif para.startswith('检查情况：') or para.startswith('存在问题：'):
                     current_description = re.sub(r'^(?:检查情况|存在问题)：', '', para).strip()
 
+                # format1 无前缀问题描述（直接正文，如柳梧2号格式）
+                elif (current_section_code is not None and current_description is None
+                      and not self._is_pic_caption(para)
+                      and not re.match(r'^图[0-9]', para)):
+                    current_description = para
+
                 # 检查是否是"处理措施："段落
                 elif para.startswith('处理措施：'):
                     measures = para.replace('处理措施：', '').strip()
