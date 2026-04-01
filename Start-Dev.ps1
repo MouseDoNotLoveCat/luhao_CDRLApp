@@ -55,8 +55,18 @@ if (-not (Test-Path "backend")) {
     exit 1
 }
 
-# Skip dependency installation - already installed
-Write-Host "[SKIP] Backend dependencies already installed" -ForegroundColor Green
+# Install backend dependencies
+Write-Host "[INSTALL] Installing backend dependencies..." -ForegroundColor Yellow
+Set-Location "backend"
+pip install -r requirements.txt --quiet
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Failed to install backend dependencies" -ForegroundColor Red
+    Set-Location $ROOT_DIR
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+Set-Location $ROOT_DIR
+Write-Host "[OK] Backend dependencies installed" -ForegroundColor Green
 
 # Start backend service in new window
 $backendCommand = "cd '$ROOT_DIR'; python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000"
