@@ -552,6 +552,7 @@ class WordDocumentParser:
         current_requirements = None
         current_deadline = None
         current_responsible_unit = None
+        in_measures = False
 
         # 检测文档格式
         doc_format = self._detect_document_format()
@@ -575,6 +576,7 @@ class WordDocumentParser:
             if in_rectification:
                 # 格式1：检查是否是新标段/工点（以（一）、（二）等开头）
                 if re.match(r'^（[一二三四五六七八九十]）', para):
+                    in_measures = False
                     # 保存前一个问题
                     if current_description:
                         issue = {
@@ -610,6 +612,7 @@ class WordDocumentParser:
 
                 # 格式2：检查是否是黄百格式的数字编号行（如"1.中铁五局施工..."）
                 elif doc_format == 'format2' and re.match(r'^\d+[\.．]', para):
+                    in_measures = False
                     # 检查是否是黄百格式的标段/工点行（包含"施工"、"监理"、"标"）
                     if '施工' in para and '监理' in para and '标' in para:
                         # 保存前一个问题
@@ -666,11 +669,17 @@ class WordDocumentParser:
                 # format1 无前缀问题描述（直接正文，如柳梧2号格式）
                 elif (current_section_code is not None and current_description is None
                       and not self._is_pic_caption(para)
-                      and not re.match(r'^图[0-9]', para)):
+                      and not re.match(r'^图[0-9]', para)
+                      and not in_measures):
                     current_description = para
+
+                # 处理措施续行（in_measures 为 True 时，追加到 current_requirements）
+                elif in_measures:
+                    current_requirements = (current_requirements or '') + para
 
                 # 检查是否是"处理措施："段落
                 elif para.startswith('处理措施：'):
+                    in_measures = True
                     measures = para.replace('处理措施：', '').strip()
                     current_requirements = measures
 
