@@ -1262,6 +1262,8 @@ class WordDocumentParser:
         inspection_unit = self._extract_inspection_unit_from_first_para()
         inspection_personnel = self._extract_inspection_personnel_from_first_para()
 
+        in_rectification = False  # 跟踪是否处于整改通知单章节，避免误触发 other 兜底逻辑
+
         for idx, para in enumerate(self.paragraphs):
             # 获取对应的段落对象，用于检查Word格式属性
             para_obj = self.paragraph_objects[idx] if idx < len(self.paragraph_objects) else None
@@ -1270,9 +1272,10 @@ class WordDocumentParser:
             section = self._identify_section(para)
             if section == 'other':
                 in_other = True
+                in_rectification = False
                 continue
             elif section == 'rectification':
-                # 不应该回到整改通知单章节
+                in_rectification = True
                 continue
 
             # 如果进入其它章节（如"三、有关要求"或"四、监督意见"），停止收集
@@ -1282,16 +1285,21 @@ class WordDocumentParser:
                             '监督意见' in para):
                 break
 
-            # 如果尚未显式进入“其它问题”章节，但遇到一级标段行（（一）...施工、...监理的），则进入该章节
-            if not in_other and re.match(r'^（[一二三四五六七八九十]）', para) and '施工' in para and '监理' in para:
+            # 如果尚未显式进入"其它问题"章节，但遇到一级标段行（（一）...施工、...监理的），则进入该章节
+            # 注意：整改通知单章节内的同格式行不触发此逻辑
+            if not in_other and not in_rectification and re.match(r'^（[一二三四五六七八九十]）', para) and '施工' in para and '监理' in para:
                 in_other = True
                 # 进入下一轮循环，在 in_other 分支中处理该段落
                 continue
 
             # 同上：数字序号格式的标段行（1. 2. 3. 格式，包含施工和监理信息）也触发进入
-            if not in_other and re.match(r'^\d+[\.．]', para) and '施工' in para and '监理' in para and '标' in para:
+            if not in_other and not in_rectification and re.match(r'^\d+[\.．]', para) and '施工' in para and '监理' in para and '标' in para:
                 in_other = True
                 # 进入下一轮循环，在 in_other 分支中处理该段落
+                continue
+
+            # 整改通知单章节内的段落不收入 other_issues
+            if in_rectification:
                 continue
 
             # 如果在其它问题章节
